@@ -5,7 +5,7 @@ This branch is [jdx/fnox](https://github.com/jdx/fnox) **v1.39.0** (`cc06c75`) w
 ## Consumers
 
 - **[ai-ecoverse/homescoop](https://github.com/ai-ecoverse/homescoop)** `packages/wasi-fnox` builds **`@ai-ecoverse/wasi-fnox`**, fnox for seven's kernel (slicc-kernel, `wasm32-wasip1`), from a pinned commit of this branch.
-- **[ai-ecoverse/fnox-build](https://github.com/ai-ecoverse/fnox-build)** builds the native **`@ai-ecoverse/fnox`** and `@ai-ecoverse/fnox-<os>-<arch>` packages from a pinned commit. Its host-only commits sit on `slicc/v1.39-host`, on top of this branch.
+- **[ai-ecoverse/fnox-build](https://github.com/ai-ecoverse/fnox-build)** builds the native **`@ai-ecoverse/fnox`** and `@ai-ecoverse/fnox-<os>-<arch>` packages from a pinned commit. It relies on the host commits 12 to 14.
 
 ## The series
 
@@ -35,6 +35,19 @@ This branch is [jdx/fnox](https://github.com/jdx/fnox) **v1.39.0** (`cc06c75`) w
     - `check` uses `placeholder` to find removed records and stale placeholders.
 11. `2306456` **wasi: allow the lints that code compiled out on WASI leaves behind.**
 
+### Host: native builds (design: slicc-jerk-design.md §5, rules 5 and 7)
+
+12. `8b63341` **feat(proxy): take rule secrets from lease credentials and renew them (F2).**
+    - A `[[proxy.rules]]` `secret` can name a lease credential of the active profile. Names resolve as in `fnox exec`: a lease credential wins over a same-name secret.
+    - The running proxy renews the lease before it expires and keeps the placeholder.
+    - Offered upstream to jdx/fnox.
+13. `972aab4` **fix(lease): run command leases through cmd /C on Windows (F3).**
+    - `credential_command` uses the same shell, and on Windows both now hand the command line to `cmd /S /C` unchanged, so quoted paths work.
+    - Offered upstream to jdx/fnox.
+14. `2ff03bc` **providers: offer the sealed provider only on WASI.** Native `provider add` and the setup wizard no longer list it.
+
+Leases and the local proxy stay compiled out on WASI, so 12 and 13 change nothing there.
+
 ## Building for slicc-kernel
 
 ```sh
@@ -45,8 +58,8 @@ wasm-opt -Oz --strip-debug --enable-bulk-memory --enable-multivalue \
   target/wasm32-wasip1/release/fnox.wasm -o fnox.wasm
 ```
 
-- Native builds are unchanged (`cargo build`).
-- The `sealed` provider exists there too. Without `/dev/sealed`, every use of it fails with `not running in seven: /dev/sealed is missing`.
+- Native builds use `cargo build`. ai-ecoverse/fnox-build signs and packages them.
+- The `sealed` provider still parses in native configs, but it isn't offered (14). Without `/dev/sealed`, every use of it fails with `not running in seven: /dev/sealed is missing`.
 
 ## A new upstream release
 
