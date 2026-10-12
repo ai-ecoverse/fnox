@@ -45,9 +45,15 @@ pub fn scope_purpose(scope: EnvScope) -> Purpose {
 /// credentials with these names are still applied after the scrub.
 pub fn ambient_scrub_keys() -> impl Iterator<Item = &'static str> {
     ["FNOX_AGE_KEY", "FNOX_AGE_KEY_FILE"].into_iter().chain(
-        fnox_core::providers::enpass::env_dependencies()
-            .iter()
-            .copied(),
+        {
+            #[cfg(not(target_os = "wasi"))]
+            let deps = fnox_core::providers::enpass::env_dependencies();
+            #[cfg(target_os = "wasi")]
+            let deps: &[&str] = &["ENPASS_PASSWORD", "FNOX_ENPASS_PASSWORD"];
+            deps
+        }
+        .iter()
+        .copied(),
     )
 }
 

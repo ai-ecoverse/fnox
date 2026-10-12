@@ -201,7 +201,14 @@ impl AddCommand {
                 auth_command: None,
                 daemon_cache: None,
             },
-            #[cfg(not(target_env = "musl"))]
+            #[cfg(target_os = "wasi")]
+            ProviderType::Fido2 | ProviderType::Yubikey => {
+                return Err(FnoxError::Config(
+                    "hardware-key providers are not available in the WASI build of fnox"
+                        .to_string(),
+                ));
+            }
+            #[cfg(all(not(target_env = "musl"), not(target_os = "wasi")))]
             ProviderType::Fido2 => {
                 let provider_name = self.provider.clone();
                 let (credential_id_hex, salt_hex, rp_id, _pin) =
@@ -220,6 +227,7 @@ impl AddCommand {
                     daemon_cache: None,
                 }
             }
+            #[cfg(not(target_os = "wasi"))]
             ProviderType::Yubikey => {
                 let provider_name = self.provider.clone();
                 let (challenge_hex, slot_str) = tokio::task::spawn_blocking(move || {

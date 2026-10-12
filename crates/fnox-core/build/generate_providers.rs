@@ -407,9 +407,15 @@ fn generate_provider_methods(
         daemon_cache_arms.push(quote! {
             Self::#variant { daemon_cache, .. } => daemon_cache.unwrap_or(true)
         });
-        env_deps_arms.push(quote! {
-            Self::#variant { .. } => #module::env_dependencies()
-        });
+        if wasi_enabled(&provider.module) {
+            env_deps_arms.push(quote! {
+                Self::#variant { .. } => #module::env_dependencies()
+            });
+        } else {
+            env_deps_arms.push(quote! {
+                Self::#variant { .. } => &[]
+            });
+        }
         let interactive = provider.requires_interactive_auth;
         interactive_auth_arms.push(quote! {
             Self::#variant { .. } => #interactive
@@ -421,6 +427,7 @@ fn generate_provider_methods(
     // Build use statements for provider modules
     let module_uses: Vec<TokenStream> = providers
         .iter()
+        .filter(|(_name, provider)| wasi_enabled(&provider.module))
         .map(|(_name, provider)| {
             let module = Ident::new(&provider.module, Span::call_site());
             quote! { use super::super::#module; }
@@ -705,6 +712,13 @@ fn generate_from_wizard_fields_body(provider: &ProviderToml) -> TokenStream {
     }
 }
 
+fn wasi_enabled(module: &str) -> bool {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("wasi") {
+        return true;
+    }
+    matches!(module, "age" | "plain")
+}
+
 fn generate_provider_instantiate(
     providers: &[(String, ProviderToml)],
 ) -> Result<String, Box<dyn std::error::Error>> {
@@ -722,6 +736,18 @@ fn generate_provider_instantiate(
             vec![]
         };
 
+        if !wasi_enabled(&provider.module) {
+            let msg = format!(
+                "provider type '{}' is not available in the WASI build of fnox",
+                provider.serde_rename
+            );
+            arms.push(quote! {
+                ResolvedProviderConfig::#variant { .. } => {
+                    Err(crate::error::FnoxError::Config(#msg.to_string()))
+                }
+            });
+            continue;
+        }
         if provider.fields.is_empty() {
             arms.push(quote! {
                 ResolvedProviderConfig::#variant => {

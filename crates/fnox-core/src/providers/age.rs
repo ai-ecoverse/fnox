@@ -180,6 +180,7 @@ impl crate::providers::Provider for AgeEncryptionProvider {
 
         // Parse recipients - try SSH, native age, then plugin formats
         let mut parsed_recipients: Vec<Box<dyn age::Recipient + Send + Sync>> = Vec::new();
+        #[cfg(not(target_os = "wasi"))]
         let mut plugin_recipients: Vec<age::plugin::Recipient> = Vec::new();
 
         for recipient in &self.recipients {
@@ -195,7 +196,15 @@ impl crate::providers::Provider for AgeEncryptionProvider {
                 continue;
             }
 
+            #[cfg(target_os = "wasi")]
+            return Err(FnoxError::AgeEncryptionFailed {
+                details: format!(
+                    "Failed to parse recipient '{}': age plugins are not available in the WASI build",
+                    recipient
+                ),
+            });
             // Fall back to plugin recipient, e.g. age-plugin-yubikey: age1yubikey1...
+            #[cfg(not(target_os = "wasi"))]
             match recipient.parse::<age::plugin::Recipient>() {
                 Ok(plugin_recipient) => plugin_recipients.push(plugin_recipient),
                 Err(e) => {
@@ -209,10 +218,12 @@ impl crate::providers::Provider for AgeEncryptionProvider {
         // Build one plugin driver per distinct plugin name. RecipientPluginV1
         // filters the recipient list by plugin name internally, so we pass the
         // full list and spawn the matching `age-plugin-*` binary from $PATH.
+        #[cfg(not(target_os = "wasi"))]
         let plugin_names: std::collections::BTreeSet<String> = plugin_recipients
             .iter()
             .map(|r| r.plugin().to_string())
             .collect();
+        #[cfg(not(target_os = "wasi"))]
         for plugin_name in plugin_names {
             let plugin = age::plugin::RecipientPluginV1::new(
                 &plugin_name,
@@ -444,12 +455,14 @@ impl AgeEncryptionProvider {
                     // identities (e.g. AGE-PLUGIN-YUBIKEY-1...) by driving the
                     // matching `age-plugin-*` binary for PIN/touch prompts.
                     cursor.set_position(0);
-                    age::IdentityFile::from_buffer(cursor)
-                        .map_err(|e| FnoxError::AgeIdentityParseFailed {
+                    let file = age::IdentityFile::from_buffer(cursor).map_err(|e| {
+                        FnoxError::AgeIdentityParseFailed {
                             details: e.to_string(),
-                        })?
-                        .with_callbacks(age::cli_common::UiCallbacks)
-                        .into_identities()
+                        }
+                    })?;
+                    #[cfg(not(target_os = "wasi"))]
+                    let file = file.with_callbacks(age::cli_common::UiCallbacks);
+                    file.into_identities()
                         .map_err(|e| FnoxError::AgeIdentityParseFailed {
                             details: e.to_string(),
                         })?

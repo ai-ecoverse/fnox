@@ -5,40 +5,80 @@ use std::path::PathBuf;
 
 // Provider implementation modules
 pub mod age;
+#[cfg(not(target_os = "wasi"))]
 pub mod aws_kms;
+#[cfg(not(target_os = "wasi"))]
 pub mod aws_ps;
+#[cfg(not(target_os = "wasi"))]
 mod aws_shared;
+#[cfg(not(target_os = "wasi"))]
 pub mod aws_sm;
+#[cfg(not(target_os = "wasi"))]
 pub mod azure_ac;
+#[cfg(not(target_os = "wasi"))]
 pub mod azure_kms;
+#[cfg(not(target_os = "wasi"))]
 pub mod azure_sm;
+#[cfg(not(target_os = "wasi"))]
 pub mod bitwarden;
+#[cfg(not(target_os = "wasi"))]
 pub mod bitwarden_sm;
+#[cfg(not(target_os = "wasi"))]
 pub mod doppler;
+#[cfg(not(target_os = "wasi"))]
 pub mod enpass;
-#[cfg(not(target_env = "musl"))]
+#[cfg(all(not(target_env = "musl"), not(target_os = "wasi")))]
 pub mod fido2;
+#[cfg(not(target_os = "wasi"))]
 pub mod foks;
+#[cfg(not(target_os = "wasi"))]
 pub mod gcp_kms;
+#[cfg(not(target_os = "wasi"))]
 pub mod gcp_sm;
 pub mod hw_encrypt;
+#[cfg(not(target_os = "wasi"))]
 pub mod infisical;
+#[cfg(not(target_os = "wasi"))]
 pub mod keepass;
+#[cfg(not(target_os = "wasi"))]
 pub mod keeper_sm;
+#[cfg(not(target_os = "wasi"))]
 pub mod keychain;
+#[cfg(not(target_os = "wasi"))]
 pub mod onepassword;
+#[cfg(not(target_os = "wasi"))]
 pub mod password_store;
+#[cfg(not(target_os = "wasi"))]
 pub mod passwordstate;
 pub mod plain;
+#[cfg(not(target_os = "wasi"))]
 pub mod proton_pass;
 pub mod resolved;
 pub mod resolver;
 pub mod secret_ref;
+#[cfg(not(target_os = "wasi"))]
 pub mod vault;
+#[cfg(not(target_os = "wasi"))]
 pub mod yubikey;
+#[cfg(not(target_os = "wasi"))]
 pub mod yubikey_usb;
 
+#[cfg(not(target_os = "wasi"))]
 pub use bitwarden::BitwardenBackend;
+#[cfg(target_os = "wasi")]
+mod bitwarden_backend {
+    use schemars::JsonSchema;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+    #[serde(rename_all = "lowercase")]
+    pub enum BitwardenBackend {
+        Bw,
+        Rbw,
+    }
+}
+#[cfg(target_os = "wasi")]
+pub use bitwarden_backend::BitwardenBackend;
 pub use resolver::resolve_provider_config;
 pub use secret_ref::{OptionProviderSecretRef, OptionStringOrSecretRef, StringOrSecretRef};
 
@@ -144,13 +184,16 @@ mod generated {
     }
     pub(super) mod providers_instantiate {
         // Need to import provider modules for instantiation
-        #[cfg(not(target_env = "musl"))]
+        #[cfg(all(not(target_env = "musl"), not(target_os = "wasi")))]
         use super::super::fido2;
+        #[cfg(not(target_os = "wasi"))]
         use super::super::{
             age, aws_kms, aws_ps, aws_sm, azure_ac, azure_kms, azure_sm, bitwarden, bitwarden_sm,
             doppler, enpass, foks, gcp_kms, gcp_sm, infisical, keepass, keeper_sm, keychain,
             onepassword, password_store, passwordstate, plain, proton_pass, vault, yubikey,
         };
+        #[cfg(target_os = "wasi")]
+        use super::super::{age, plain};
         include!(concat!(
             env!("OUT_DIR"),
             "/generated/providers_instantiate.rs"
