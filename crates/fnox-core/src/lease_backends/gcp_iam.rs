@@ -33,12 +33,14 @@ pub fn required_env_vars() -> Vec<(&'static str, &'static str)> {
     )]
 }
 
+#[cfg(not(target_os = "wasi"))]
 pub struct GcpIamBackend {
     service_account_email: String,
     scopes: Vec<String>,
     env_var: String,
 }
 
+#[cfg(not(target_os = "wasi"))]
 impl GcpIamBackend {
     pub fn new(service_account_email: String, scopes: Vec<String>, env_var: String) -> Self {
         Self {
@@ -49,6 +51,7 @@ impl GcpIamBackend {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 #[async_trait]
 impl LeaseBackend for GcpIamBackend {
     async fn create_lease(&self, duration: Duration, label: &str) -> Result<Lease> {

@@ -1,6 +1,7 @@
 use crate::error::{FnoxError, Result};
 use crate::lease_backends::{Lease, LeaseBackend};
 use async_trait::async_trait;
+#[cfg(not(target_os = "wasi"))]
 use azure_core::credentials::TokenCredential;
 use indexmap::IndexMap;
 use std::sync::Arc;
@@ -19,6 +20,9 @@ pub fn check_prerequisites() -> Option<String> {
     if has_sp {
         return None;
     }
+    #[cfg(target_os = "wasi")]
+    let has_az = false;
+    #[cfg(not(target_os = "wasi"))]
     let has_az = which::which("az").is_ok();
     if has_az {
         None
@@ -35,11 +39,13 @@ pub fn required_env_vars() -> Vec<(&'static str, &'static str)> {
     ]
 }
 
+#[cfg(not(target_os = "wasi"))]
 pub struct AzureTokenBackend {
     scope: String,
     env_var: String,
 }
 
+#[cfg(not(target_os = "wasi"))]
 impl AzureTokenBackend {
     pub fn new(scope: String, env_var: String) -> Self {
         Self { scope, env_var }
@@ -81,6 +87,7 @@ impl AzureTokenBackend {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 #[async_trait]
 impl LeaseBackend for AzureTokenBackend {
     async fn create_lease(&self, duration: Duration, _label: &str) -> Result<Lease> {

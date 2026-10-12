@@ -1,8 +1,11 @@
 use crate::commands::Cli;
 use crate::config::{Config, ProviderConfig, SecretConfig};
 use crate::error::{FnoxError, Result};
+#[cfg(not(target_os = "wasi"))]
 use crate::providers::{WizardCategory, WizardInfo, get_provider_from_resolved};
+#[cfg(not(target_os = "wasi"))]
 use demand::{Confirm, DemandOption, Input, Select};
+#[cfg(not(target_os = "wasi"))]
 use std::collections::HashMap;
 
 #[derive(Debug, usage_rs::Args)]
@@ -56,6 +59,9 @@ impl InitCommand {
             })?;
         }
 
+        #[cfg(target_os = "wasi")]
+        let config = Config::new();
+        #[cfg(not(target_os = "wasi"))]
         let config = if self.skip_wizard || !atty::is(atty::Stream::Stdin) {
             // Non-interactive mode
             Config::new()
@@ -84,6 +90,7 @@ impl InitCommand {
         Ok(())
     }
 
+    #[cfg(not(target_os = "wasi"))]
     async fn run_wizard(&self) -> Result<Config> {
         println!("\n🔐 Welcome to fnox setup wizard!\n");
         println!("This will help you configure your first secret provider.\n");
@@ -163,6 +170,7 @@ impl InitCommand {
     }
 
     /// Select a provider category
+    #[cfg(not(target_os = "wasi"))]
     fn select_category(&self) -> Result<WizardCategory> {
         let mut select = Select::new("What type of provider do you want to use?")
             .description("Choose a category based on your security and convenience needs")
@@ -191,6 +199,7 @@ impl InitCommand {
     }
 
     /// Select a specific provider from the given list
+    #[cfg(not(target_os = "wasi"))]
     fn select_provider(&self, providers: &[&'static WizardInfo]) -> Result<&'static WizardInfo> {
         let mut select = Select::new("Select provider:").filterable(false);
 
@@ -217,6 +226,7 @@ impl InitCommand {
     }
 
     /// Collect field values from the user
+    #[cfg(not(target_os = "wasi"))]
     fn collect_fields(&self, info: &WizardInfo) -> Result<HashMap<String, String>> {
         let mut fields = HashMap::new();
 
@@ -240,6 +250,7 @@ impl InitCommand {
     }
 
     /// Get the provider name from the user
+    #[cfg(not(target_os = "wasi"))]
     fn get_provider_name(&self, default: &str) -> Result<String> {
         Input::new("Provider name:")
             .placeholder(default)
@@ -255,6 +266,7 @@ impl InitCommand {
     }
 
     /// Test the provider connection and print the result
+    #[cfg(not(target_os = "wasi"))]
     async fn test_provider_connection(
         &self,
         provider_name: &str,

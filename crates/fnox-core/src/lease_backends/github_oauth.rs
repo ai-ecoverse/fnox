@@ -2,6 +2,7 @@ use crate::error::{FnoxError, Result};
 use crate::lease_backends::{Lease, LeaseBackend};
 use async_trait::async_trait;
 use indexmap::IndexMap;
+#[cfg(not(target_os = "wasi"))]
 use keyring_core::Entry;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -23,6 +24,7 @@ pub fn required_env_vars() -> Vec<(&'static str, &'static str)> {
     vec![]
 }
 
+#[cfg(not(target_os = "wasi"))]
 #[derive(Debug, Clone)]
 pub struct GitHubOauthBackend {
     client_id: String,
@@ -35,6 +37,7 @@ pub struct GitHubOauthBackend {
     api_base: String,
 }
 
+#[cfg(not(target_os = "wasi"))]
 #[derive(Debug, Clone, Deserialize)]
 struct DeviceCodeResponse {
     device_code: String,
@@ -45,6 +48,7 @@ struct DeviceCodeResponse {
     interval: u64,
 }
 
+#[cfg(not(target_os = "wasi"))]
 #[derive(Debug, Clone, Deserialize)]
 struct TokenResponse {
     access_token: Option<String>,
@@ -55,12 +59,14 @@ struct TokenResponse {
     error_description: Option<String>,
 }
 
+#[cfg(not(target_os = "wasi"))]
 #[derive(Debug, Clone, Deserialize)]
 struct UserResponse {
     login: Option<String>,
     message: Option<String>,
 }
 
+#[cfg(not(target_os = "wasi"))]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CachedToken {
     access_token: String,
@@ -73,6 +79,7 @@ struct CachedToken {
     login: Option<String>,
 }
 
+#[cfg(not(target_os = "wasi"))]
 impl GitHubOauthBackend {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -354,6 +361,7 @@ impl GitHubOauthBackend {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 #[async_trait]
 impl LeaseBackend for GitHubOauthBackend {
     async fn create_lease(&self, _duration: Duration, _label: &str) -> Result<Lease> {
@@ -374,10 +382,12 @@ impl LeaseBackend for GitHubOauthBackend {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 fn default_poll_interval() -> u64 {
     5
 }
 
+#[cfg(not(target_os = "wasi"))]
 fn invalid_response(details: String) -> FnoxError {
     FnoxError::ProviderInvalidResponse {
         provider: PROVIDER.to_string(),
@@ -387,6 +397,7 @@ fn invalid_response(details: String) -> FnoxError {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 fn api_error(details: String) -> FnoxError {
     FnoxError::ProviderApiError {
         provider: PROVIDER.to_string(),
@@ -396,6 +407,7 @@ fn api_error(details: String) -> FnoxError {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 fn auth_failed(details: String) -> FnoxError {
     FnoxError::ProviderAuthFailed {
         provider: PROVIDER.to_string(),
@@ -405,6 +417,7 @@ fn auth_failed(details: String) -> FnoxError {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 fn interactive_auth_required() -> FnoxError {
     FnoxError::ProviderAuthFailed {
         provider: PROVIDER.to_string(),
@@ -416,12 +429,14 @@ fn interactive_auth_required() -> FnoxError {
 
 /// Detach the launcher's stdio so a browser cannot write to, or hold open, the
 /// caller's pipes (`fnox env --json` promises a pure stdout).
+#[cfg(not(target_os = "wasi"))]
 fn silence(cmd: &mut std::process::Command) -> &mut std::process::Command {
     cmd.stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
 }
 
+#[cfg(not(target_os = "wasi"))]
 fn open_browser(url: &str) -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
     {

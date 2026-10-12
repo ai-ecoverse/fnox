@@ -39,6 +39,7 @@ async fn run(argv: Vec<std::ffi::OsString>) -> miette::Result<()> {
     }
 
     // Initialize rustls crypto provider for GCP SDKs
+    #[cfg(not(target_os = "wasi"))]
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     let (cli, settings_layer) = Cli::parse_with_settings();

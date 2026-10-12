@@ -9,6 +9,7 @@ fn configured_timeout(value: &str) -> Option<Duration> {
 }
 
 /// Build an HTTP client with the configured timeout from settings.
+#[cfg(not(target_os = "wasi"))]
 pub fn http_client() -> reqwest::Client {
     let settings = crate::settings::Settings::get();
     let user_agent = format!("fnox/{}", env!("CARGO_PKG_VERSION"));

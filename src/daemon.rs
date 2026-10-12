@@ -464,6 +464,15 @@ pub async fn start_background(cli: &Cli, config: Option<&Config>) -> Result<bool
     start_background_for_context(&ResolveContext::from_cli(cli), config).await
 }
 
+#[cfg(target_os = "wasi")]
+async fn start_background_for_context(
+    _ctx: &ResolveContext,
+    _config: Option<&Config>,
+) -> Result<bool> {
+    Ok(false)
+}
+
+#[cfg(not(target_os = "wasi"))]
 async fn start_background_for_context(
     ctx: &ResolveContext,
     config: Option<&Config>,

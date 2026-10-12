@@ -15,9 +15,12 @@ pub mod child_env;
 pub mod commands;
 pub mod daemon;
 pub mod hook_env;
+#[cfg(not(target_os = "wasi"))]
 pub mod mcp_server;
+#[cfg(not(target_os = "wasi"))]
 pub mod proxy;
 pub mod shell;
+#[cfg(not(target_os = "wasi"))]
 pub mod tui;
 
 // Re-export commonly used items

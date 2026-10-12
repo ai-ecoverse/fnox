@@ -325,6 +325,15 @@ impl LeaseBackendConfig {
     }
 
     /// Create a lease backend instance from this configuration
+    #[cfg(target_os = "wasi")]
+    pub fn create_backend(&self) -> Result<Box<dyn LeaseBackend>> {
+        Err(crate::error::FnoxError::Config(
+            "lease backends are not available in the WASI build of fnox".to_string(),
+        ))
+    }
+
+    /// Create a lease backend instance from this configuration
+    #[cfg(not(target_os = "wasi"))]
     pub fn create_backend(&self) -> Result<Box<dyn LeaseBackend>> {
         match self {
             LeaseBackendConfig::AwsSts {

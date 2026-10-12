@@ -74,6 +74,7 @@ pub struct CloudflarePermissionGroup {
     pub name: Option<String>,
 }
 
+#[cfg(not(target_os = "wasi"))]
 impl CloudflareBackend {
     pub fn new(
         token_type: CloudflareTokenType,
@@ -325,6 +326,7 @@ impl CloudflareBackend {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 #[async_trait]
 impl LeaseBackend for CloudflareBackend {
     async fn create_lease(&self, duration: Duration, label: &str) -> Result<Lease> {

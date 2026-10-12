@@ -3,6 +3,7 @@ use crate::lease_backends::{Lease, LeaseBackend};
 use async_trait::async_trait;
 use indexmap::IndexMap;
 use std::time::Duration;
+#[cfg(not(target_os = "wasi"))]
 use tokio::process::Command;
 
 const URL: &str = "https://fnox.jdx.dev/leases/command";
@@ -21,12 +22,14 @@ pub fn required_env_vars() -> Vec<(&'static str, &'static str)> {
     vec![]
 }
 
+#[cfg(not(target_os = "wasi"))]
 pub struct CommandBackend {
     create_command: String,
     revoke_command: Option<String>,
     timeout: Duration,
 }
 
+#[cfg(not(target_os = "wasi"))]
 impl CommandBackend {
     pub fn new(create_command: String, revoke_command: Option<String>, timeout: Duration) -> Self {
         Self {
@@ -80,6 +83,7 @@ impl CommandBackend {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 #[async_trait]
 impl LeaseBackend for CommandBackend {
     async fn create_lease(&self, duration: Duration, label: &str) -> Result<Lease> {

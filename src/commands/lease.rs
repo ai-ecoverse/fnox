@@ -254,6 +254,12 @@ impl LeaseCreateCommand {
                 eprintln!();
                 for (var, description) in &required_vars {
                     if std::env::var(var).is_err() {
+                        #[cfg(target_os = "wasi")]
+                        let value: String = {
+                            let _ = description;
+                            return Err(FnoxError::Config(format!("{var} is not set")));
+                        };
+                        #[cfg(not(target_os = "wasi"))]
                         let value = demand::Input::new(format!("{var} ({description})"))
                             .placeholder("paste value here")
                             .run()

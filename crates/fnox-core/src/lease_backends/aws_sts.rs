@@ -1,7 +1,9 @@
 use crate::error::{FnoxError, Result};
 use crate::lease_backends::{Lease, LeaseBackend};
 use async_trait::async_trait;
+#[cfg(not(target_os = "wasi"))]
 use aws_config::BehaviorVersion;
+#[cfg(not(target_os = "wasi"))]
 use aws_sdk_sts::Client;
 use indexmap::IndexMap;
 use std::time::Duration;
@@ -54,6 +56,7 @@ pub fn required_env_vars() -> Vec<(&'static str, &'static str)> {
     ]
 }
 
+#[cfg(not(target_os = "wasi"))]
 pub struct AwsStsBackend {
     region: String,
     profile: Option<String>,
@@ -61,6 +64,7 @@ pub struct AwsStsBackend {
     endpoint: Option<String>,
 }
 
+#[cfg(not(target_os = "wasi"))]
 impl AwsStsBackend {
     pub fn new(
         region: String,
@@ -95,6 +99,7 @@ impl AwsStsBackend {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 #[async_trait]
 impl LeaseBackend for AwsStsBackend {
     async fn create_lease(&self, duration: Duration, label: &str) -> Result<Lease> {
@@ -190,6 +195,7 @@ impl LeaseBackend for AwsStsBackend {
 
 /// Sanitize a string for use as an AWS STS role session name.
 /// Session names must be 2-64 chars, matching [\w+=,.@-]+
+#[cfg(not(target_os = "wasi"))]
 fn sanitize_session_name(name: &str) -> String {
     let sanitized: String = name
         .chars()

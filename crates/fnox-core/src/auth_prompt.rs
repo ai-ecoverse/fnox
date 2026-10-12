@@ -6,6 +6,7 @@
 use crate::config::Config;
 use crate::error::{FnoxError, Result};
 use crate::providers::ProviderConfig;
+#[cfg(not(target_os = "wasi"))]
 use demand::Confirm;
 use std::process::Command;
 
@@ -38,12 +39,19 @@ pub fn prompt_and_run_auth(
         provider_name, error
     );
 
+    #[cfg(target_os = "wasi")]
+    {
+        let _ = auth_command;
+        return Ok(false);
+    }
+    #[cfg(not(target_os = "wasi"))]
     let user_confirmed = Confirm::new(format!("Run `{}` to authenticate?", auth_command))
         .affirmative("Yes")
         .negative("No")
         .run()
         .map_err(|e| FnoxError::Provider(format!("Failed to show prompt: {}", e)))?;
 
+    #[cfg(not(target_os = "wasi"))]
     if !user_confirmed {
         return Ok(false);
     }

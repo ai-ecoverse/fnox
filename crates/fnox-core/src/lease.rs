@@ -42,6 +42,7 @@ pub struct LeaseLedger {
 
 /// RAII guard for the ledger file lock. The lock is released when dropped.
 pub struct LedgerLockGuard {
+    #[cfg(not(target_os = "wasi"))]
     _lock: xx::fslock::LockFile,
 }
 
@@ -96,10 +97,20 @@ impl LeaseLedger {
     pub fn lock(project_dir: &Path) -> Result<LedgerLockGuard> {
         let ledger_path = Self::ledger_path(project_dir);
         let lock_path = ledger_path.with_extension("lock");
-        let lock = xx::fslock::FSLock::new(&lock_path)
-            .lock()
-            .map_err(|e| FnoxError::Config(format!("Failed to acquire ledger lock: {e}")))?;
-        Ok(LedgerLockGuard { _lock: lock })
+        #[cfg(target_os = "wasi")]
+        {
+            let _ = lock_path;
+            Err(FnoxError::Config(
+                "leases are not available in the WASI build of fnox".to_string(),
+            ))
+        }
+        #[cfg(not(target_os = "wasi"))]
+        {
+            let lock = xx::fslock::FSLock::new(&lock_path)
+                .lock()
+                .map_err(|e| FnoxError::Config(format!("Failed to acquire ledger lock: {e}")))?;
+            Ok(LedgerLockGuard { _lock: lock })
+        }
     }
 
     /// Load the lease ledger from disk, creating an empty one if it doesn't exist.

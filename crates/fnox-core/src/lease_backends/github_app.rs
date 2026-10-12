@@ -40,6 +40,7 @@ pub fn required_env_vars() -> Vec<(&'static str, &'static str)> {
     vec![]
 }
 
+#[cfg(not(target_os = "wasi"))]
 pub struct GitHubAppBackend {
     app_id: String,
     installation_id: String,
@@ -50,6 +51,7 @@ pub struct GitHubAppBackend {
     api_base: Option<String>,
 }
 
+#[cfg(not(target_os = "wasi"))]
 impl GitHubAppBackend {
     pub fn new(
         app_id: String,
@@ -132,6 +134,7 @@ impl GitHubAppBackend {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 #[async_trait]
 impl LeaseBackend for GitHubAppBackend {
     async fn create_lease(&self, _duration: Duration, _label: &str) -> Result<Lease> {

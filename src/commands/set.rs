@@ -148,12 +148,18 @@ impl SetCommand {
                 .map_err(|source| FnoxError::StdinReadFailed { source })?;
             Some(buffer.trim().to_string())
         } else {
+            #[cfg(target_os = "wasi")]
+            return Err(FnoxError::Config(
+                "no value given: pass it as an argument or pipe it on stdin".to_string(),
+            ));
             // Interactive terminal - prompt for value
+            #[cfg(not(target_os = "wasi"))]
             let value = demand::Input::new("Enter secret value")
                 .prompt("Secret value: ")
                 .password(true)
                 .run()
                 .map_err(|e| FnoxError::Config(format!("Failed to read input: {}", e)))?;
+            #[cfg(not(target_os = "wasi"))]
             Some(value)
         };
 

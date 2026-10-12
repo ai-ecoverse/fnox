@@ -64,6 +64,7 @@ pub fn required_env_vars(
     vars
 }
 
+#[cfg(not(target_os = "wasi"))]
 pub struct VaultBackend {
     address: String,
     token: Option<String>,
@@ -74,6 +75,7 @@ pub struct VaultBackend {
     method: String,
 }
 
+#[cfg(not(target_os = "wasi"))]
 impl VaultBackend {
     pub fn new(
         address: Option<String>,
@@ -195,6 +197,7 @@ impl VaultBackend {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 #[async_trait]
 impl LeaseBackend for VaultBackend {
     async fn create_lease(&self, duration: Duration, _label: &str) -> Result<Lease> {

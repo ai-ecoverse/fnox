@@ -11,10 +11,12 @@
 pub mod auth_prompt;
 pub mod config;
 pub mod config_path;
+#[cfg(not(target_os = "wasi"))]
 pub(crate) mod credential_command;
 pub mod env;
 pub mod error;
 pub mod http;
+#[cfg(not(target_os = "wasi"))]
 pub(crate) mod keyring_store;
 pub mod lease;
 pub mod lease_backends;

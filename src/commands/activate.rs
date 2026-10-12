@@ -27,9 +27,12 @@ impl ActivateCommand {
         let shell = shell::get_shell(Some(&shell_name))?;
 
         // Get the current executable path
+        #[cfg(not(target_os = "wasi"))]
         let exe = std::env::current_exe()
             .or_else(|_| which::which("fnox"))
             .unwrap_or_else(|_| std::path::PathBuf::from("fnox"));
+        #[cfg(target_os = "wasi")]
+        let exe = std::path::PathBuf::from("fnox");
 
         let opts = ActivateOptions {
             exe,

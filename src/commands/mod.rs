@@ -9,6 +9,7 @@ pub mod check;
 pub mod ci_redact;
 pub mod completion;
 pub mod config_files;
+#[cfg(not(target_os = "wasi"))]
 pub mod daemon;
 pub mod deactivate;
 pub mod doctor;
@@ -22,9 +23,11 @@ pub mod import;
 pub mod init;
 pub mod lease;
 pub mod list;
+#[cfg(not(target_os = "wasi"))]
 pub mod mcp;
 pub mod profiles;
 pub mod provider;
+#[cfg(not(target_os = "wasi"))]
 pub mod proxy;
 pub mod reencrypt;
 pub mod remove;
@@ -33,6 +36,7 @@ pub mod schema;
 pub mod set;
 pub mod sponsors;
 pub mod sync;
+#[cfg(not(target_os = "wasi"))]
 pub mod tui;
 pub mod usage;
 pub mod version;
@@ -108,6 +112,7 @@ pub enum Commands {
     ConfigFiles(config_files::ConfigFilesCommand),
 
     /// Manage the per-user daemon
+    #[cfg(not(target_os = "wasi"))]
     Daemon(daemon::DaemonCommand),
 
     /// Disable fnox shell integration in the current shell session
@@ -148,6 +153,7 @@ pub enum Commands {
     List(list::ListCommand),
 
     /// Start an MCP server that brokers secrets to AI agents
+    #[cfg(not(target_os = "wasi"))]
     Mcp(mcp::McpCommand),
 
     /// List available profiles
@@ -157,6 +163,7 @@ pub enum Commands {
     Provider(provider::ProviderCommand),
 
     /// Broker credentials into destination-scoped HTTPS requests
+    #[cfg(not(target_os = "wasi"))]
     Proxy(proxy::ProxyCommand),
 
     /// Re-encrypt secrets with current provider configuration
@@ -182,6 +189,7 @@ pub enum Commands {
     Sync(sync::SyncCommand),
 
     /// Interactive TUI dashboard for managing secrets
+    #[cfg(not(target_os = "wasi"))]
     Tui(tui::TuiCommand),
 
     /// Generate usage specification
@@ -297,6 +305,7 @@ impl Commands {
             Commands::Init(cmd) => cmd.run(cli).await,
             Commands::Completion(cmd) => cmd.run(cli).await,
             Commands::ConfigFiles(cmd) => cmd.run(cli).await,
+            #[cfg(not(target_os = "wasi"))]
             Commands::Daemon(cmd) => cmd.run(cli).await,
             Commands::Schema(cmd) => cmd.run(cli).await,
             Commands::Sponsors(cmd) => cmd.run(cli).await,
@@ -324,6 +333,7 @@ impl Commands {
             Commands::Import(cmd) => cmd.run(cli, self.load_config(cli)?).await,
             Commands::Lease(cmd) => cmd.run(cli, self.load_config(cli)?).await,
             Commands::List(cmd) => cmd.run(cli, self.load_config(cli)?).await,
+            #[cfg(not(target_os = "wasi"))]
             Commands::Mcp(cmd) => cmd.run(cli, self.load_config(cli)?).await,
             Commands::Profiles(cmd) => cmd.run(cli, self.load_config(cli)?).await,
             Commands::Provider(cmd)
@@ -332,6 +342,7 @@ impl Commands {
                 cmd.run(cli, Config::new()).await
             }
             Commands::Provider(cmd) => cmd.run(cli, self.load_config(cli)?).await,
+            #[cfg(not(target_os = "wasi"))]
             Commands::Proxy(cmd) => cmd.run(cli, self.load_config(cli)?).await,
             Commands::Reencrypt(cmd) => cmd.run(cli, self.load_config(cli)?).await,
             Commands::Env(cmd) => cmd.run(cli).await,
@@ -340,6 +351,7 @@ impl Commands {
             Commands::Set(cmd) => cmd.run(cli, self.load_config(cli)?).await,
             Commands::Sync(cmd) => cmd.run(cli, self.load_config(cli)?).await,
             Commands::Scan(cmd) => cmd.run(cli, self.load_config(cli)?).await,
+            #[cfg(not(target_os = "wasi"))]
             Commands::Tui(cmd) => cmd.run(cli, self.load_config(cli)?).await,
         }
     }
