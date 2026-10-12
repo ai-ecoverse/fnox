@@ -178,6 +178,7 @@ which = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 
 [target.'cfg(target_os = "wasi")'.dependencies]
+wasix-command = { path = "crates/wasix-command" }
 tokio = { workspace = true, features = ["rt", "macros", "sync", "time", "io-util", "fs", "io-std"] }
 
 [dev-dependencies]

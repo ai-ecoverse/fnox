@@ -2,8 +2,11 @@ use crate::child_env::{self, EnvScope, Roots};
 use crate::error::{FnoxError, Result};
 use crate::temp_file_secrets::create_ephemeral_secret_file;
 use crate::{commands::Cli, config::Config};
+#[cfg(not(target_os = "wasi"))]
 use std::process::Command;
 use tempfile::NamedTempFile;
+#[cfg(target_os = "wasi")]
+use wasix_command::Command;
 
 #[derive(Debug, usage_rs::Args)]
 #[usage(alias = "x", alias_hidden = "run")]
