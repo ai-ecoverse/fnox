@@ -18,10 +18,14 @@ duration = "1h"
 
 | Field            | Required | Description                                              |
 | ---------------- | -------- | -------------------------------------------------------- |
-| `create_command` | Yes      | Shell command to create credentials (run via `sh -c`)    |
-| `revoke_command` | No       | Shell command to revoke credentials (run via `sh -c`)    |
+| `create_command` | Yes      | Shell command to create credentials                      |
+| `revoke_command` | No       | Shell command to revoke credentials                      |
 | `duration`       | No       | Lease duration (e.g., `"1h"`, `"30m"`; default: `"15m"`) |
 | `timeout`        | No       | Command execution timeout (default: `"30s"`)             |
+
+Commands run through `sh -c` on Unix and through `cmd /C` on Windows, the same
+shells `credential_command` uses. Write Windows commands in `cmd` syntax, for
+example `%FNOX_LEASE_LABEL%` rather than `$FNOX_LEASE_LABEL`.
 
 ## Prerequisites
 
