@@ -103,6 +103,40 @@ impl CheckCommand {
                                 continue;
                             }
 
+                            if matches!(
+                                providers.get(resolution_provider),
+                                Some(ProviderConfig::Sealed { .. })
+                            ) {
+                                match fnox_core::sealed::placeholder(&name) {
+                                    Ok(record) if record.state == "removed" => {
+                                        issues.push(format!(
+                                            "Secret '{}' was removed from seven's vault",
+                                            name
+                                        ));
+                                    }
+                                    Ok(record)
+                                        if secret_config.value()
+                                            != Some(record.placeholder.as_str()) =>
+                                    {
+                                        issues.push(format!(
+                                            "Secret '{}' has a placeholder seven's vault does not know; run `fnox set {}`",
+                                            name, name
+                                        ));
+                                    }
+                                    Ok(record) if record.state == "inert" => {
+                                        warnings.push(format!(
+                                            "Secret '{}' is in seven's vault, but no rule names it yet",
+                                            name
+                                        ));
+                                    }
+                                    Ok(_) => {}
+                                    Err(err) => {
+                                        issues.push(format!("Secret '{}': {}", name, err));
+                                    }
+                                }
+                                continue;
+                            }
+
                             // Try to actually resolve the secret from the provider
                             match crate::daemon::resolve_one(
                                 cli,

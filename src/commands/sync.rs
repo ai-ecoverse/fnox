@@ -47,6 +47,13 @@ pub struct SyncCommand {
 
 impl SyncCommand {
     pub async fn run(&self, cli: &Cli, merged_config: Config) -> Result<()> {
+        #[cfg(target_os = "wasi")]
+        {
+            let _ = (cli, merged_config);
+            return Err(FnoxError::Seven(
+                fnox_core::sealed::REFUSED_IN_SEVEN.to_string(),
+            ));
+        }
         let profile = Config::get_profiles(cli.profile.as_slice());
         let write_profile = Config::resolve_write_profile(&profile, cli.write_profile.as_deref())?;
         tracing::debug!("Syncing secrets for profile '{}'", write_profile);

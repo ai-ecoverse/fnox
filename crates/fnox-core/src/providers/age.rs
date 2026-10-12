@@ -332,6 +332,28 @@ impl crate::providers::Provider for AgeEncryptionProvider {
             .collect()
     }
 
+    #[cfg(target_os = "wasi")]
+    async fn get_secret(&self, _value: &str) -> Result<String> {
+        Err(FnoxError::Seven(crate::sealed::AGE_UNSUPPORTED.to_string()))
+    }
+
+    #[cfg(target_os = "wasi")]
+    async fn get_secrets_batch(
+        &self,
+        secrets: &[(String, String)],
+    ) -> HashMap<String, Result<String>> {
+        secrets
+            .iter()
+            .map(|(key, _)| {
+                (
+                    key.clone(),
+                    Err(FnoxError::Seven(crate::sealed::AGE_UNSUPPORTED.to_string())),
+                )
+            })
+            .collect()
+    }
+
+    #[cfg(not(target_os = "wasi"))]
     async fn get_secret(&self, value: &str) -> Result<String> {
         if let Some((wrapped_key, ciphertext)) = Self::parse_batch_value(value) {
             let batch_key = self.decrypt_batch_key(wrapped_key).await?;
@@ -341,6 +363,7 @@ impl crate::providers::Provider for AgeEncryptionProvider {
         self.decrypt_age_value(value).await
     }
 
+    #[cfg(not(target_os = "wasi"))]
     async fn get_secrets_batch(
         &self,
         secrets: &[(String, String)],

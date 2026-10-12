@@ -39,6 +39,13 @@ pub struct ReencryptCommand {
 
 impl ReencryptCommand {
     pub async fn run(&self, cli: &Cli, merged_config: Config) -> Result<()> {
+        #[cfg(target_os = "wasi")]
+        {
+            let _ = (cli, merged_config);
+            return Err(FnoxError::Seven(
+                fnox_core::sealed::REFUSED_IN_SEVEN.to_string(),
+            ));
+        }
         let profile = Config::get_profiles(cli.profile.as_slice());
         tracing::debug!(
             "Re-encrypting secrets for profiles '{}'",
