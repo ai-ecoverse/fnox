@@ -312,6 +312,7 @@ impl AddCommand {
                 auth_command: None,
                 daemon_cache: None,
             },
+            #[cfg(target_os = "wasi")]
             ProviderType::Sealed => crate::config::ProviderConfig::Sealed {
                 auth_command: None,
                 daemon_cache: None,

@@ -719,6 +719,12 @@ fn wasi_enabled(module: &str) -> bool {
     matches!(module, "age" | "plain" | "sealed")
 }
 
+/// Whether the provider is offered by the setup wizard. The `sealed` provider
+/// only works inside seven's kernel, so native builds do not offer it.
+fn wizard_listed(module: &str) -> bool {
+    module != "sealed" || std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("wasi")
+}
+
 fn generate_provider_instantiate(
     providers: &[(String, ProviderToml)],
 ) -> Result<String, Box<dyn std::error::Error>> {
@@ -887,7 +893,7 @@ fn generate_provider_wizard(
 ) -> Result<String, Box<dyn std::error::Error>> {
     let mut wizard_info_entries = Vec::new();
 
-    for (_name, provider) in providers {
+    for (_name, provider) in providers.iter().filter(|(_, p)| wizard_listed(&p.module)) {
         let provider_type = &provider.serde_rename;
         let display_name = &provider.display_name;
         let description = &provider.description;

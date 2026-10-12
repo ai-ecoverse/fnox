@@ -101,7 +101,9 @@ pub enum ProviderType {
     /// Plain text provider
     #[usage(name = "plain")]
     Plain,
+    // Only offered on WASI: the store exists only inside seven's kernel.
     /// Seven's sealed store (slicc-kernel /dev/sealed)
+    #[cfg(target_os = "wasi")]
     #[usage(name = "sealed")]
     Sealed,
     /// Proton Pass
@@ -180,6 +182,8 @@ mod tests {
             })
             // fido2 is excluded from musl builds — mirror build/generate_providers.rs.
             .filter(|name| !(cfg!(target_env = "musl") && name == "fido2"))
+            // sealed is only offered on WASI, where seven's kernel provides it.
+            .filter(|name| cfg!(target_os = "wasi") || name != "sealed")
             .map(|provider_type| normalize_provider_type_for_add(&provider_type))
             .collect();
 
