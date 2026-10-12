@@ -8,6 +8,17 @@
 //! The `fnox` binary depends on this crate and adds CLI-shaped bits (commands, MCP
 //! server, TUI, shell integration, hook-env machinery) on top.
 
+#![cfg_attr(
+    target_os = "wasi",
+    allow(
+        dead_code,
+        unused_imports,
+        unused_variables,
+        unused_mut,
+        unreachable_code
+    )
+)]
+
 pub mod auth_prompt;
 pub mod config;
 pub mod config_path;

@@ -1,3 +1,14 @@
+#![cfg_attr(
+    target_os = "wasi",
+    allow(
+        dead_code,
+        unused_imports,
+        unused_variables,
+        unused_mut,
+        unreachable_code
+    )
+)]
+
 // Library interface for fnox
 //
 // The provider library, config types, and secret resolver live in the `fnox-core`
