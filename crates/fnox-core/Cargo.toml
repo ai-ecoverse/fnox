@@ -11,47 +11,25 @@ readme = "../../README.md"
 
 [dependencies]
 aes-gcm = { workspace = true }
-age = { workspace = true }
 arc-swap = { workspace = true }
 async-trait = { workspace = true }
 atty = { workspace = true }
-aws-config = { workspace = true }
-aws-sdk-kms = { workspace = true }
-aws-sdk-secretsmanager = { workspace = true }
-aws-sdk-ssm = { workspace = true }
-aws-sdk-sts = { workspace = true }
-azure_core = { workspace = true }
-azure_identity = { workspace = true }
-azure_security_keyvault_keys = { workspace = true }
-azure_security_keyvault_secrets = { workspace = true }
 base64 = { workspace = true }
 blake3 = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 usage-rs = { workspace = true }
-demand = { workspace = true }
 dirs = { workspace = true }
 fnox-client = { workspace = true }
 futures = { workspace = true }
-gcp_auth = { workspace = true }
-google-cloud-kms = { workspace = true }
-google-cloud-secretmanager-v1 = { workspace = true }
 hex = { workspace = true }
 hkdf = { workspace = true }
 hmac = { workspace = true }
 indexmap = { workspace = true }
-jsonwebtoken = { workspace = true }
-keepass = { workspace = true }
-keeper-secrets-manager-core = { workspace = true }
-keyring-core = { workspace = true }
-libloading = { workspace = true }
 miette = { workspace = true }
 pluralizer = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
-reqwest = { workspace = true }
-rpassword = { workspace = true }
-rusqlite = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -64,16 +42,44 @@ strum = { workspace = true }
 tempfile = { workspace = true }
 tera = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true }
 toml_edit = { workspace = true }
 tracing = { workspace = true }
 urlencoding = { workspace = true }
-which = { workspace = true }
+
+[target.'cfg(not(target_os = "wasi"))'.dependencies]
+aws-config = { workspace = true }
+aws-sdk-kms = { workspace = true }
+aws-sdk-secretsmanager = { workspace = true }
+aws-sdk-ssm = { workspace = true }
+aws-sdk-sts = { workspace = true }
+azure_core = { workspace = true }
+azure_identity = { workspace = true }
+azure_security_keyvault_keys = { workspace = true }
+azure_security_keyvault_secrets = { workspace = true }
+gcp_auth = { workspace = true }
+google-cloud-kms = { workspace = true }
+google-cloud-secretmanager-v1 = { workspace = true }
+jsonwebtoken = { workspace = true }
+keepass = { workspace = true }
+keeper-secrets-manager-core = { workspace = true }
+keyring-core = { workspace = true }
+libloading = { workspace = true }
+reqwest = { workspace = true }
+rusqlite = { workspace = true }
 xx = { workspace = true }
+demand = { workspace = true }
+rpassword = { workspace = true }
+which = { workspace = true }
+age = { workspace = true, features = ["ssh", "plugin", "cli-common"] }
+tokio = { workspace = true, features = ["full"] }
+
+[target.'cfg(target_os = "wasi")'.dependencies]
+age = { workspace = true, features = ["ssh"] }
+tokio = { workspace = true, features = ["rt", "macros", "sync", "time", "io-util", "fs", "io-std"] }
 
 # ctap-hid-fido2 → hidapi → libudev cannot be statically linked on musl,
 # so the FIDO2 provider is excluded from musl builds.
-[target.'cfg(not(target_env = "musl"))'.dependencies]
+[target.'cfg(all(not(target_env = "musl"), not(target_os = "wasi")))'.dependencies]
 ctap-hid-fido2 = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
