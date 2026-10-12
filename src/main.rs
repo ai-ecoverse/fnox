@@ -3,6 +3,10 @@ use fnox::settings;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 fn main() -> miette::Result<()> {
+    #[cfg(target_os = "wasi")]
+    if let Some(pwd) = std::env::var_os("PWD") {
+        let _ = std::env::set_current_dir(pwd);
+    }
     let argv: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
     if fnox::hook_env::can_exit_before_startup(&argv) {
         return Ok(());
@@ -10,7 +14,8 @@ fn main() -> miette::Result<()> {
     run(argv)
 }
 
-#[tokio::main]
+#[cfg_attr(not(target_os = "wasi"), tokio::main)]
+#[cfg_attr(target_os = "wasi", tokio::main(flavor = "current_thread"))]
 async fn run(argv: Vec<std::ffi::OsString>) -> miette::Result<()> {
     // Restore the default SIGPIPE handler. Rust inherits SIG_IGN from libc,
     // so writes to a closed pipe return EPIPE and `println!` panics — e.g.

@@ -40,12 +40,18 @@ pub fn remove_var<K: AsRef<OsStr>>(key: K) {
 }
 
 // Directory configuration
-pub static HOME_DIR: LazyLock<PathBuf> = LazyLock::new(|| dirs::home_dir().unwrap_or_default());
+pub static HOME_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
+    #[cfg(target_os = "wasi")]
+    if let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) {
+        return PathBuf::from(home);
+    }
+    dirs::home_dir().unwrap_or_default()
+});
 pub static FNOX_CONFIG_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
     var_path("FNOX_CONFIG_DIR").unwrap_or_else(|| {
         var_path("XDG_CONFIG_HOME")
             .unwrap_or_else(|| {
-                #[cfg(unix)]
+                #[cfg(any(unix, target_os = "wasi"))]
                 return HOME_DIR.join(".config");
                 #[cfg(windows)]
                 return HOME_DIR.join("AppData").join("Local");
@@ -58,7 +64,7 @@ pub static FNOX_STATE_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
     var_path("FNOX_STATE_DIR").unwrap_or_else(|| {
         var_path("XDG_STATE_HOME")
             .unwrap_or_else(|| {
-                #[cfg(unix)]
+                #[cfg(any(unix, target_os = "wasi"))]
                 return HOME_DIR.join(".local").join("state");
                 #[cfg(windows)]
                 return HOME_DIR.join("AppData").join("Local");
