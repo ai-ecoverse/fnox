@@ -125,6 +125,8 @@ impl SetCommand {
         let has_metadata =
             self.description.is_some() || self.if_missing.is_some() || self.default.is_some();
 
+        #[cfg_attr(not(target_os = "wasi"), allow(unused_mut))]
+        let mut ask_vault = false;
         // Get the secret value if provided
         let secret_value = if let Some(ref path) = self.from_file {
             Some(std::fs::read_to_string(path).map_err(|source| {
@@ -149,9 +151,10 @@ impl SetCommand {
             Some(buffer.trim().to_string())
         } else {
             #[cfg(target_os = "wasi")]
-            return Err(FnoxError::Config(
-                "no value given: pass it as an argument or pipe it on stdin".to_string(),
-            ));
+            {
+                ask_vault = true;
+                None
+            }
             // Interactive terminal - prompt for value
             #[cfg(not(target_os = "wasi"))]
             let value = demand::Input::new("Enter secret value")
@@ -181,6 +184,35 @@ impl SetCommand {
             // Try to use default provider if available, but it's OK if there isn't one
             // (will store as plaintext)
             config.get_default_provider(&write_profile_stack)?
+        };
+
+        let sealed_provider = match &provider_name_to_use {
+            Some(name) => config
+                .get_providers(&write_profile_stack)?
+                .get(name)
+                .is_some_and(|provider| provider.provider_type() == "sealed"),
+            None => false,
+        };
+        if ask_vault && !sealed_provider {
+            return Err(FnoxError::Config(
+                "no value given: pass it as an argument or pipe it on stdin".to_string(),
+            ));
+        }
+        if sealed_provider && self.value.is_some() {
+            return Err(FnoxError::Seven(
+                "not available in seven: a value on the command line is visible to other processes; pipe it on stdin".to_string(),
+            ));
+        }
+        if sealed_provider && self.key_name.is_some() {
+            return Err(FnoxError::Seven(
+                "not available in seven: a sealed record is named after its secret (--key-name)"
+                    .to_string(),
+            ));
+        }
+        let vault_placeholder = if ask_vault && !self.dry_run {
+            Some(crate::seven::request_value(&self.key)?)
+        } else {
+            None
         };
 
         // Check if secret should be base64 encoded
@@ -243,12 +275,16 @@ impl SetCommand {
                             provider_name
                         );
 
-                        let key_name = resolve_remote_key_name(
-                            &self.key,
-                            self.key_name.as_deref(),
-                            existing_secret.as_ref(),
-                            provider_name,
-                        );
+                        let key_name = if sealed_provider {
+                            self.key.as_str()
+                        } else {
+                            resolve_remote_key_name(
+                                &self.key,
+                                self.key_name.as_deref(),
+                                existing_secret.as_ref(),
+                                provider_name,
+                            )
+                        };
 
                         if self.dry_run {
                             // In dry-run mode, skip actual remote storage
@@ -315,6 +351,11 @@ impl SetCommand {
             secret_config.set_provider(provider_name_to_use.clone());
         }
 
+        if secret_value.is_none()
+            && let Some(placeholder) = &vault_placeholder
+        {
+            secret_config.set_value(Some(placeholder.clone()));
+        }
         if let Some(ref value) = secret_value {
             // Priority order: remote key name, encrypted value, then plaintext
             if let Some(remote_key) = remote_key_name {

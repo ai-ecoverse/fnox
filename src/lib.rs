@@ -19,6 +19,7 @@ pub mod hook_env;
 pub mod mcp_server;
 #[cfg(not(target_os = "wasi"))]
 pub mod proxy;
+pub mod seven;
 pub mod shell;
 #[cfg(not(target_os = "wasi"))]
 pub mod tui;
