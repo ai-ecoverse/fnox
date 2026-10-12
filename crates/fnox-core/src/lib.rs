@@ -22,6 +22,7 @@ pub mod lease;
 pub mod lease_backends;
 pub mod library;
 pub mod providers;
+pub mod sealed;
 pub mod secret_resolver;
 pub mod settings;
 pub mod source_registry;

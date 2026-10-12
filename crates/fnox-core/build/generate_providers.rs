@@ -716,7 +716,7 @@ fn wasi_enabled(module: &str) -> bool {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("wasi") {
         return true;
     }
-    matches!(module, "age" | "plain")
+    matches!(module, "age" | "plain" | "sealed")
 }
 
 fn generate_provider_instantiate(

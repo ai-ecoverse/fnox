@@ -312,6 +312,10 @@ impl AddCommand {
                 auth_command: None,
                 daemon_cache: None,
             },
+            ProviderType::Sealed => crate::config::ProviderConfig::Sealed {
+                auth_command: None,
+                daemon_cache: None,
+            },
             ProviderType::ProtonPass => crate::config::ProviderConfig::ProtonPass {
                 vault: self
                     .vault

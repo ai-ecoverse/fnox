@@ -101,6 +101,9 @@ pub enum ProviderType {
     /// Plain text provider
     #[usage(name = "plain")]
     Plain,
+    /// Seven's sealed store (slicc-kernel /dev/sealed)
+    #[usage(name = "sealed")]
+    Sealed,
     /// Proton Pass
     #[usage(name = "proton-pass")]
     #[strum(serialize = "proton-pass")]

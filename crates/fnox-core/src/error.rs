@@ -119,6 +119,10 @@ pub enum FnoxError {
     #[diagnostic(code(fnox::config::error))]
     Config(String),
 
+    #[error("{0}")]
+    #[diagnostic(code(fnox::seven))]
+    Seven(String),
+
     // ========================================================================
     // Profile Errors
     // ========================================================================

@@ -1,0 +1,9 @@
+display_name = "Seven sealed store"
+serde_rename = "sealed"
+rust_variant = "Sealed"
+category = "Local"
+description = "Seven's vault holds the value; fnox stores only its placeholder"
+default_name = "seven"
+setup_instructions = """
+Only available inside seven (slicc-kernel with /dev/sealed).
+fnox stores the placeholder; the kernel fills in the value at use."""

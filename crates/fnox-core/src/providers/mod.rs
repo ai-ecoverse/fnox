@@ -55,6 +55,7 @@ pub mod plain;
 pub mod proton_pass;
 pub mod resolved;
 pub mod resolver;
+pub mod sealed;
 pub mod secret_ref;
 #[cfg(not(target_os = "wasi"))]
 pub mod vault;
@@ -190,10 +191,10 @@ mod generated {
         use super::super::{
             age, aws_kms, aws_ps, aws_sm, azure_ac, azure_kms, azure_sm, bitwarden, bitwarden_sm,
             doppler, enpass, foks, gcp_kms, gcp_sm, infisical, keepass, keeper_sm, keychain,
-            onepassword, password_store, passwordstate, plain, proton_pass, vault, yubikey,
+            onepassword, password_store, passwordstate, plain, proton_pass, sealed, vault, yubikey,
         };
         #[cfg(target_os = "wasi")]
-        use super::super::{age, plain};
+        use super::super::{age, plain, sealed};
         include!(concat!(
             env!("OUT_DIR"),
             "/generated/providers_instantiate.rs"
