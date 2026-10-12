@@ -3,8 +3,6 @@ use crate::lease_backends::{Lease, LeaseBackend};
 use async_trait::async_trait;
 use indexmap::IndexMap;
 use std::time::Duration;
-#[cfg(not(target_os = "wasi"))]
-use tokio::process::Command;
 
 const URL: &str = "https://fnox.jdx.dev/leases/command";
 
@@ -45,8 +43,7 @@ impl CommandBackend {
         envs: &[(&str, String)],
         action: &str,
     ) -> Result<std::process::Output> {
-        let mut cmd = Command::new("sh");
-        cmd.arg("-c").arg(cmd_str);
+        let mut cmd = crate::credential_command::shell_command(cmd_str);
         for (k, v) in envs {
             cmd.env(k, v);
         }
@@ -190,5 +187,52 @@ impl LeaseBackend for CommandBackend {
 
     fn max_lease_duration(&self) -> Duration {
         Duration::from_secs(24 * 3600)
+    }
+}
+
+#[cfg(all(test, not(target_os = "wasi")))]
+mod tests {
+    use super::*;
+
+    // Each command only works under the platform's own shell: `printf` with a
+    // POSIX `$VAR` on Unix, and `echo` with a `%VAR%` expansion under `cmd`.
+    #[cfg(unix)]
+    const CREATE_COMMAND: &str = r#"printf '{"credentials":{"LABEL":"%s","DURATION":"%s"}}' "$FNOX_LEASE_LABEL" "$FNOX_LEASE_DURATION""#;
+    #[cfg(windows)]
+    const CREATE_COMMAND: &str =
+        r#"echo {"credentials":{"LABEL":"%FNOX_LEASE_LABEL%","DURATION":"%FNOX_LEASE_DURATION%"}}"#;
+
+    #[tokio::test]
+    async fn create_command_runs_through_the_platform_shell() {
+        let backend =
+            CommandBackend::new(CREATE_COMMAND.to_string(), None, Duration::from_secs(30));
+
+        let lease = backend
+            .create_lease(Duration::from_secs(300), "fnox-test")
+            .await
+            .unwrap();
+
+        assert_eq!(lease.credentials["LABEL"], "fnox-test");
+        assert_eq!(lease.credentials["DURATION"], "300");
+        assert!(lease.lease_id.starts_with("cmd"));
+    }
+
+    #[tokio::test]
+    async fn revoke_command_runs_through_the_platform_shell() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let revoked = tempdir.path().join("revoked");
+        #[cfg(unix)]
+        let command = format!(r#"printf '%s' "$FNOX_LEASE_ID" > '{}'"#, revoked.display());
+        #[cfg(windows)]
+        let command = format!(r#"echo %FNOX_LEASE_ID%> "{}""#, revoked.display());
+        let backend =
+            CommandBackend::new("exit 1".to_string(), Some(command), Duration::from_secs(30));
+
+        backend.revoke_lease("cmd-lease-1", None).await.unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(&revoked).unwrap().trim(),
+            "cmd-lease-1"
+        );
     }
 }

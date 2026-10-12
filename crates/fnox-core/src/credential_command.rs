@@ -147,15 +147,23 @@ fn cache_key(provider: &str, command: &str, envs: &[(&str, String)]) -> String {
     hasher.finalize().to_hex().to_string()
 }
 
-fn shell_command(command: &str) -> Command {
-    // `cfg!` selects the shell for the target binary at compile time, which
-    // matches fnox's native build/release flow. Cross-compiled artifacts should
-    // be built per target so Windows binaries use cmd and Unix binaries use sh.
-    if cfg!(target_os = "windows") {
+/// A command that runs `command` through the platform shell: `sh -c` on Unix
+/// and `cmd /C` on Windows.
+///
+/// On Windows the command line is handed to `cmd` as written. `/S` makes `cmd`
+/// strip exactly the outer quotes added here, so quoted paths and arguments in
+/// `command` reach it unchanged rather than with the backslash escapes that
+/// ordinary argument quoting would add, which `cmd` does not understand.
+pub(crate) fn shell_command(command: &str) -> Command {
+    #[cfg(windows)]
+    {
         let mut cmd = Command::new("cmd");
-        cmd.args(["/C", command]);
+        cmd.args(["/S", "/C"]);
+        cmd.raw_arg(format!("\"{command}\""));
         cmd
-    } else {
+    }
+    #[cfg(not(windows))]
+    {
         let mut cmd = Command::new("sh");
         cmd.args(["-c", command]);
         cmd
@@ -166,6 +174,23 @@ fn shell_command(command: &str) -> Command {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn credential_command_passes_quotes_to_cmd_unchanged() {
+        let token = run(
+            "TestQuotes",
+            r#"echo "quoted token""#,
+            json!({}),
+            &[],
+            DEFAULT_TIMEOUT,
+            "https://example.com",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(token, r#""quoted token""#);
+    }
 
     #[cfg(unix)]
     #[tokio::test]
