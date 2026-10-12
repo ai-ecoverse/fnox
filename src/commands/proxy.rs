@@ -1,8 +1,10 @@
 use crate::commands::Cli;
 use crate::config::{Config, ProxyConfig, SecretConfig};
 use crate::error::{FnoxError, Result};
+#[cfg(not(target_os = "wasi"))]
 use crate::proxy::{ProxyPlan, RunningProxy};
 use indexmap::IndexMap;
+#[cfg(not(target_os = "wasi"))]
 use std::process::Stdio;
 
 const AMBIENT_CREDENTIAL_ENV_VARS: &[&str] = &[
@@ -107,10 +109,17 @@ pub struct ProxyCommand {
 #[derive(Debug, usage_rs::Subcommands)]
 enum ProxySubcommand {
     /// Show the effective credential proxy rules
-    Rules,
+    Rules(ProxyRulesCommand),
 
     /// Run a command with placeholder credentials through the local proxy
     Run(ProxyRunCommand),
+}
+
+#[derive(Debug, usage_rs::Args)]
+struct ProxyRulesCommand {
+    /// Print the [proxy] configuration as JSON
+    #[usage(long)]
+    json: bool,
 }
 
 #[derive(Debug, usage_rs::Args)]
@@ -132,10 +141,19 @@ impl ProxyCommand {
             )
         })?;
         match &self.command {
-            ProxySubcommand::Rules => show_rules(proxy),
+            ProxySubcommand::Rules(command) if command.json => show_rules_json(proxy),
+            ProxySubcommand::Rules(_) => show_rules(proxy),
             ProxySubcommand::Run(command) => command.run(cli, config).await,
         }
     }
+}
+
+fn show_rules_json(proxy: &ProxyConfig) -> Result<()> {
+    crate::proxy::validate_config(proxy)?;
+    let json = serde_json::to_string_pretty(proxy)
+        .map_err(|e| FnoxError::Config(format!("Failed to encode proxy rules: {e}")))?;
+    println!("{json}");
+    Ok(())
 }
 
 fn show_rules(proxy: &ProxyConfig) -> Result<()> {
@@ -225,6 +243,89 @@ fn collect_requested_secrets(
 }
 
 impl ProxyRunCommand {
+    #[cfg(target_os = "wasi")]
+    async fn run(&self, cli: &Cli, config: Config) -> Result<()> {
+        if self.command.is_empty() {
+            return Err(FnoxError::CommandNotSpecified);
+        }
+        let proxy_config = config
+            .proxy
+            .as_ref()
+            .ok_or_else(|| FnoxError::Config("No [proxy] configuration found".to_string()))?;
+        crate::proxy::validate_config(proxy_config)?;
+        let profile = Config::get_profiles(&cli.profile);
+        let all_secrets = config.get_secrets(&profile)?;
+        let sealed = crate::seven::sealed_secret_names(&config, &profile)?;
+        let mut child_env: IndexMap<String, String> = IndexMap::new();
+        for rule in &proxy_config.rules {
+            let secret = all_secrets.get(&rule.secret).ok_or_else(|| {
+                FnoxError::Config(format!(
+                    "Proxy rule references unknown secret '{}'",
+                    rule.secret
+                ))
+            })?;
+            if !sealed.contains(&rule.secret) {
+                return Err(FnoxError::Seven(format!(
+                    "not available in seven: proxy secret '{}' is not a sealed secret",
+                    rule.secret
+                )));
+            }
+            let placeholder = secret.value().ok_or_else(|| {
+                FnoxError::Seven(format!(
+                    "seven: '{}' has no placeholder; run `fnox set {}`",
+                    rule.secret, rule.secret
+                ))
+            })?;
+            let env_name = rule.env.as_deref().unwrap_or(&rule.secret);
+            if let Some(existing) = child_env.get(env_name)
+                && existing != placeholder
+            {
+                return Err(FnoxError::Config(format!(
+                    "proxy: environment variable '{env_name}' maps to multiple secrets"
+                )));
+            }
+            child_env.insert(env_name.to_string(), placeholder.to_string());
+        }
+
+        let mut command = wasix_command::Command::new(&self.command[0]);
+        command.args(&self.command[1..]);
+        for key in all_secrets.keys() {
+            command.env_remove(key);
+        }
+        for key in AMBIENT_CREDENTIAL_ENV_VARS {
+            command.env_remove(key);
+        }
+        for provider in config.get_providers(&profile)?.values() {
+            for dependency in provider.env_dependencies() {
+                command.env_remove(dependency);
+            }
+        }
+        command.env("FNOX_DAEMON", "off");
+        command.env("FNOX_NON_INTERACTIVE", "1");
+        for (key, placeholder) in child_env {
+            command.env(key, placeholder);
+        }
+
+        let status = match command.status() {
+            Ok(status) => status,
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => {
+                eprintln!("fnox: {}: command not found", self.command[0]);
+                std::process::exit(127);
+            }
+            Err(source) => {
+                return Err(FnoxError::CommandExecutionFailed {
+                    command: self.command.join(" "),
+                    source,
+                });
+            }
+        };
+        if !status.success() {
+            std::process::exit(status.code().unwrap_or(1));
+        }
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "wasi"))]
     async fn run(&self, cli: &Cli, config: Config) -> Result<()> {
         if self.command.is_empty() {
             return Err(FnoxError::CommandNotSpecified);

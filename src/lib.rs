@@ -17,7 +17,6 @@ pub mod daemon;
 pub mod hook_env;
 #[cfg(not(target_os = "wasi"))]
 pub mod mcp_server;
-#[cfg(not(target_os = "wasi"))]
 pub mod proxy;
 pub mod seven;
 pub mod shell;

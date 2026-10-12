@@ -1,28 +1,47 @@
-use crate::config::{ProxyConfig, ProxyEgress};
+use crate::config::ProxyConfig;
+#[cfg(not(target_os = "wasi"))]
+use crate::config::ProxyEgress;
 use crate::error::{FnoxError, Result};
+#[cfg(not(target_os = "wasi"))]
 use base64::Engine;
 use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
+#[cfg(not(target_os = "wasi"))]
 use indexmap::IndexMap;
+#[cfg(not(target_os = "wasi"))]
 use rcgen::{BasicConstraints, Certificate, CertificateParams, IsCa, Issuer, KeyPair};
+#[cfg(not(target_os = "wasi"))]
 use reqwest::Method;
+#[cfg(not(target_os = "wasi"))]
 use rustls::ServerConfig;
+#[cfg(not(target_os = "wasi"))]
 use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
+#[cfg(not(target_os = "wasi"))]
 use std::collections::{HashMap, HashSet};
+#[cfg(not(target_os = "wasi"))]
 use std::io::Write;
+#[cfg(not(target_os = "wasi"))]
 use std::sync::Arc;
+#[cfg(not(target_os = "wasi"))]
 use tempfile::NamedTempFile;
+#[cfg(not(target_os = "wasi"))]
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+#[cfg(not(target_os = "wasi"))]
 use tokio::net::{TcpListener, TcpStream};
+#[cfg(not(target_os = "wasi"))]
 use tokio::sync::oneshot;
+#[cfg(not(target_os = "wasi"))]
 use tokio_rustls::TlsAcceptor;
 
+#[cfg(not(target_os = "wasi"))]
 const MAX_HEADER_BYTES: usize = 64 * 1024;
+#[cfg(not(target_os = "wasi"))]
 const MAX_BODY_BYTES: usize = 10 * 1024 * 1024;
 
 fn proxy_error(message: impl Into<String>) -> FnoxError {
     FnoxError::Config(format!("proxy: {}", message.into()))
 }
 
+#[cfg(not(target_os = "wasi"))]
 #[derive(Debug)]
 struct PreparedRule {
     secret: String,
@@ -34,6 +53,7 @@ struct PreparedRule {
     value: String,
 }
 
+#[cfg(not(target_os = "wasi"))]
 impl PreparedRule {
     fn route_matches(&self, method: &str, path: &str) -> bool {
         (self.methods.is_empty() || self.methods.contains(method))
@@ -44,6 +64,7 @@ impl PreparedRule {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 #[derive(Debug)]
 struct ProxyPolicy {
     egress: ProxyEgress,
@@ -53,12 +74,14 @@ struct ProxyPolicy {
     client: reqwest::Client,
 }
 
+#[cfg(not(target_os = "wasi"))]
 #[derive(Debug)]
 struct Redaction {
     value: Vec<u8>,
     placeholder: Vec<u8>,
 }
 
+#[cfg(not(target_os = "wasi"))]
 impl ProxyPolicy {
     fn has_domain(&self, domain: &str) -> bool {
         self.rules.iter().any(|rule| rule.domain == domain)
@@ -135,6 +158,7 @@ impl ProxyPolicy {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 pub struct ProxyPlan {
     policy: Arc<ProxyPolicy>,
     pub child_env: IndexMap<String, String>,
@@ -150,6 +174,7 @@ pub fn validate_config(config: &ProxyConfig) -> Result<()> {
     Ok(())
 }
 
+#[cfg(not(target_os = "wasi"))]
 impl ProxyPlan {
     pub fn new(config: &ProxyConfig, values: &IndexMap<String, String>) -> Result<Self> {
         validate_config(config)?;
@@ -308,6 +333,19 @@ fn validate_rule(rule: &crate::config::ProxyRule) -> Result<()> {
         )));
     }
     for method in &rule.methods {
+        #[cfg(target_os = "wasi")]
+        let valid = !method.is_empty()
+            && method
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte));
+        #[cfg(target_os = "wasi")]
+        if !valid {
+            return Err(proxy_error(format!(
+                "rule for '{}' has an invalid HTTP method '{method}'",
+                rule.secret
+            )));
+        }
+        #[cfg(not(target_os = "wasi"))]
         Method::from_bytes(method.as_bytes()).map_err(|_| {
             proxy_error(format!(
                 "rule for '{}' has an invalid HTTP method '{method}'",
@@ -342,6 +380,7 @@ fn compile_paths(paths: &[String]) -> Result<Option<GlobSet>> {
     })?))
 }
 
+#[cfg(not(target_os = "wasi"))]
 fn generated_placeholder(secret: &str) -> String {
     let mut hasher = blake3::Hasher::new();
     hasher.update(secret.as_bytes());
@@ -356,11 +395,13 @@ fn generated_placeholder(secret: &str) -> String {
     format!("fnox_proxy_{}", &hasher.finalize().to_hex()[..24])
 }
 
+#[cfg(not(target_os = "wasi"))]
 struct CertificateAuthority {
     certificate: Certificate,
     issuer: Issuer<'static, KeyPair>,
 }
 
+#[cfg(not(target_os = "wasi"))]
 impl CertificateAuthority {
     fn new() -> Result<Self> {
         let mut params = CertificateParams::new(Vec::<String>::new())
@@ -399,6 +440,7 @@ impl CertificateAuthority {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 pub struct RunningProxy {
     pub address: std::net::SocketAddr,
     ca_file: NamedTempFile,
@@ -406,6 +448,7 @@ pub struct RunningProxy {
     task: tokio::task::JoinHandle<()>,
 }
 
+#[cfg(not(target_os = "wasi"))]
 impl RunningProxy {
     pub async fn start(plan: ProxyPlan) -> Result<Self> {
         let authority = Arc::new(CertificateAuthority::new()?);
@@ -476,6 +519,7 @@ impl RunningProxy {
     }
 }
 
+#[cfg(not(target_os = "wasi"))]
 fn write_trust_bundle(file: &mut impl Write, authority: &Certificate) -> Result<()> {
     let native = rustls_native_certs::load_native_certs();
     if native.certs.is_empty() {
@@ -499,6 +543,7 @@ fn write_trust_bundle(file: &mut impl Write, authority: &Certificate) -> Result<
         .map_err(|error| proxy_error(format!("failed to write proxy CA: {error}")))
 }
 
+#[cfg(not(target_os = "wasi"))]
 fn write_pem_certificate(file: &mut impl Write, der: &[u8]) -> std::io::Result<()> {
     writeln!(file, "-----BEGIN CERTIFICATE-----")?;
     let encoded = base64::engine::general_purpose::STANDARD.encode(der);
@@ -509,6 +554,7 @@ fn write_pem_certificate(file: &mut impl Write, der: &[u8]) -> std::io::Result<(
     writeln!(file, "-----END CERTIFICATE-----")
 }
 
+#[cfg(not(target_os = "wasi"))]
 async fn handle_connection(
     stream: TcpStream,
     policy: Arc<ProxyPolicy>,
@@ -579,6 +625,7 @@ async fn handle_connection(
     result
 }
 
+#[cfg(not(target_os = "wasi"))]
 fn parse_connect_target(target: &str) -> Result<(String, u16)> {
     let (domain, port) = target
         .rsplit_once(':')
@@ -593,6 +640,7 @@ fn parse_connect_target(target: &str) -> Result<(String, u16)> {
     Ok((domain, port))
 }
 
+#[cfg(not(target_os = "wasi"))]
 struct HttpRequest {
     method: String,
     target: String,
@@ -600,6 +648,7 @@ struct HttpRequest {
     body: Vec<u8>,
 }
 
+#[cfg(not(target_os = "wasi"))]
 async fn proxy_http_request<S>(stream: &mut S, domain: &str, policy: &ProxyPolicy) -> Result<()>
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -742,6 +791,7 @@ where
     Ok(())
 }
 
+#[cfg(not(target_os = "wasi"))]
 fn has_ambiguous_path_encoding(target: &str) -> bool {
     let path = target
         .split('?')
@@ -758,6 +808,7 @@ fn has_ambiguous_path_encoding(target: &str) -> bool {
             .any(|segment| segment == "." || segment == "..")
 }
 
+#[cfg(not(target_os = "wasi"))]
 async fn read_http_request<S>(stream: &mut S) -> Result<HttpRequest>
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -822,6 +873,7 @@ where
     })
 }
 
+#[cfg(not(target_os = "wasi"))]
 async fn read_line_limited<R>(reader: &mut R, remaining: usize) -> Result<String>
 where
     R: tokio::io::AsyncBufRead + Unpin,
@@ -855,6 +907,7 @@ where
     String::from_utf8(line).map_err(|_| proxy_error("HTTP request headers are not valid UTF-8"))
 }
 
+#[cfg(not(target_os = "wasi"))]
 fn is_hop_by_hop_header(name: &str) -> bool {
     matches!(
         name.to_ascii_lowercase().as_str(),
@@ -872,15 +925,18 @@ fn is_hop_by_hop_header(name: &str) -> bool {
     )
 }
 
+#[cfg(not(target_os = "wasi"))]
 fn redact_values(body: &mut Vec<u8>, redactions: &[Redaction]) {
     *body = redact_bytes(body, redactions);
 }
 
+#[cfg(not(target_os = "wasi"))]
 fn redact_string(value: &str, redactions: &[Redaction]) -> String {
     String::from_utf8(redact_bytes(value.as_bytes(), redactions))
         .expect("redacting UTF-8 values with UTF-8 placeholders preserves UTF-8")
 }
 
+#[cfg(not(target_os = "wasi"))]
 fn redact_bytes(input: &[u8], redactions: &[Redaction]) -> Vec<u8> {
     let mut output = Vec::with_capacity(input.len());
     let mut offset = 0;
@@ -899,6 +955,7 @@ fn redact_bytes(input: &[u8], redactions: &[Redaction]) -> Vec<u8> {
     output
 }
 
+#[cfg(not(target_os = "wasi"))]
 async fn write_error<S>(stream: &mut S, status: u16, message: &str) -> Result<()>
 where
     S: AsyncWrite + Unpin,

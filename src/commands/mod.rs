@@ -27,7 +27,6 @@ pub mod list;
 pub mod mcp;
 pub mod profiles;
 pub mod provider;
-#[cfg(not(target_os = "wasi"))]
 pub mod proxy;
 pub mod reencrypt;
 pub mod remove;
@@ -163,7 +162,6 @@ pub enum Commands {
     Provider(provider::ProviderCommand),
 
     /// Broker credentials into destination-scoped HTTPS requests
-    #[cfg(not(target_os = "wasi"))]
     Proxy(proxy::ProxyCommand),
 
     /// Re-encrypt secrets with current provider configuration
@@ -342,7 +340,6 @@ impl Commands {
                 cmd.run(cli, Config::new()).await
             }
             Commands::Provider(cmd) => cmd.run(cli, self.load_config(cli)?).await,
-            #[cfg(not(target_os = "wasi"))]
             Commands::Proxy(cmd) => cmd.run(cli, self.load_config(cli)?).await,
             Commands::Reencrypt(cmd) => cmd.run(cli, self.load_config(cli)?).await,
             Commands::Env(cmd) => cmd.run(cli).await,
