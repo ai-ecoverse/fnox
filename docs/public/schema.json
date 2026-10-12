@@ -1499,7 +1499,7 @@
       "type": "object",
       "properties": {
         "secret": {
-          "description": "Secret name from the active fnox profile.",
+          "description": "Secret or lease credential name from the active fnox profile.",
           "type": "string"
         },
         "domain": {

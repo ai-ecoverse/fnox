@@ -546,6 +546,7 @@ pub struct CachedEntry {
     pub credentials: IndexMap<String, String>,
     pub encryption_provider: Option<String>,
     pub lease_id: String,
+    pub expires_at: Option<DateTime<Utc>>,
 }
 
 /// Synchronous ledger lookup: find a reusable cached entry and clone the
@@ -562,6 +563,7 @@ pub fn find_cached_entry(
         credentials: cached_creds.clone(),
         encryption_provider: cached_lease.encryption_provider.clone(),
         lease_id: cached_lease.lease_id.clone(),
+        expires_at: cached_lease.expires_at,
     })
 }
 
@@ -667,6 +669,42 @@ pub async fn resolve_lease(
     label_prefix: &str,
     skip_cache: bool,
 ) -> Result<IndexMap<String, String>> {
+    resolve_lease_with_expiry(
+        name,
+        lease_config,
+        config,
+        profile,
+        project_dir,
+        prereq_missing,
+        label_prefix,
+        skip_cache,
+    )
+    .await
+    .map(|lease| lease.credentials)
+}
+
+/// Credentials from [`resolve_lease_with_expiry`], with the expiry of the lease
+/// they belong to.
+#[derive(Debug, Clone)]
+pub struct ResolvedLease {
+    pub credentials: IndexMap<String, String>,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+/// [`resolve_lease`], also returning when the credentials expire, for callers
+/// that keep them past the current command and must renew them in time
+/// (`fnox proxy run`).
+#[allow(clippy::too_many_arguments)]
+pub async fn resolve_lease_with_expiry(
+    name: &str,
+    lease_config: &crate::lease_backends::LeaseBackendConfig,
+    config: &Config,
+    profile: &[String],
+    project_dir: &Path,
+    prereq_missing: Option<&str>,
+    label_prefix: &str,
+    skip_cache: bool,
+) -> Result<ResolvedLease> {
     let config_hash = lease_config.config_hash();
 
     if !skip_cache {
@@ -678,10 +716,14 @@ pub async fn resolve_lease(
             let ledger = LeaseLedger::load(project_dir)?;
             find_cached_entry(&ledger, name, &config_hash)
         };
-        if let Some(entry) = cached_entry
-            && let Some(creds) = resolve_cached_entry(entry, config, profile, name).await
-        {
-            return Ok(creds);
+        if let Some(entry) = cached_entry {
+            let expires_at = entry.expires_at;
+            if let Some(credentials) = resolve_cached_entry(entry, config, profile, name).await {
+                return Ok(ResolvedLease {
+                    credentials,
+                    expires_at,
+                });
+            }
         }
     }
 
@@ -737,7 +779,10 @@ pub async fn resolve_lease(
         );
     }
 
-    Ok(result.credentials)
+    Ok(ResolvedLease {
+        credentials: result.credentials,
+        expires_at: result.expires_at,
+    })
 }
 
 #[cfg(test)]

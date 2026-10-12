@@ -13,7 +13,8 @@ that need to call external APIs.
 
 ## Configure rules
 
-Proxy rules refer to secrets in the active profile:
+Proxy rules refer to secrets, or [lease credentials](#lease-credentials), in
+the active profile:
 
 ```toml
 [providers.op]
@@ -38,6 +39,35 @@ placeholder = "ghp_000000000000000000000000000000000000"
 The optional `placeholder` is useful when an SDK validates credential format.
 When omitted, fnox generates a unique placeholder for the session.
 
+## Lease credentials
+
+A rule's `secret` can also name a credential from one of the active profile's
+[leases](/leases/), so short-lived tokens never have to be stored as secrets:
+
+```toml
+[leases.github]
+type = "command"
+create_command = "./scripts/github-token.sh"
+duration = "1h"
+
+[proxy]
+[[proxy.rules]]
+secret = "GITHUB_TOKEN"
+domain = "api.github.com"
+```
+
+fnox resolves rule names the way `fnox exec` does: a lease credential wins over
+a secret with the same name, and a later lease wins over an earlier one. Only
+leases that may supply a rule run: those that declare one of the rule names,
+and `command` leases, whose credential names are only known once they run.
+Cached lease credentials are reused while they are valid.
+
+While the command runs, fnox renews each lease credential it injects five
+minutes before the lease expires (halfway to expiry for shorter leases), and
+injects the new value under the same placeholder. The child keeps working
+without being restarted. Values that were replaced are still redacted from
+responses. If a renewal fails, fnox logs a warning and tries again.
+
 Inspect the effective rules without resolving secrets:
 
 ```bash
@@ -55,7 +85,7 @@ fnox proxy run -- node agent.js
 fnox:
 
 1. Resolves secrets referenced by proxy rules and any provider authentication
-   secrets they depend on.
+   secrets they depend on, and runs the leases that supply rule credentials.
 2. Starts a loopback-only HTTPS (CONNECT) proxy with an ephemeral certificate
    authority.
 3. Passes placeholders and standard proxy/CA environment variables to the
@@ -64,7 +94,8 @@ fnox:
    when its domain, method, path, and header rule match.
 5. Replaces reflected secret values in response headers and bodies with their
    placeholders.
-6. Stops the proxy and deletes the public CA file when the command exits.
+6. Renews lease credentials before they expire, keeping their placeholders.
+7. Stops the proxy and deletes the public CA file when the command exits.
 
 The CA private key and real secret values remain in fnox process memory.
 

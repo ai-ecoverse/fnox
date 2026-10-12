@@ -9,7 +9,7 @@ use rustls::ServerConfig;
 use rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use tempfile::NamedTempFile;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
@@ -51,6 +51,8 @@ struct ProxyPolicy {
     rules: Vec<PreparedRule>,
     redactions: Vec<Redaction>,
     client: reqwest::Client,
+    values: IndexMap<String, String>,
+    retired: Vec<(String, String)>,
 }
 
 #[derive(Debug)]
@@ -136,8 +138,66 @@ impl ProxyPolicy {
 }
 
 pub struct ProxyPlan {
-    policy: Arc<ProxyPolicy>,
+    values: ProxyValues,
     pub child_env: IndexMap<String, String>,
+}
+
+/// The parts of a proxy session that stay fixed while secret values change:
+/// the rules, the placeholder of each secret, and the upstream client.
+#[derive(Debug)]
+struct ProxySession {
+    config: ProxyConfig,
+    placeholders: HashMap<String, String>,
+    client: reqwest::Client,
+}
+
+/// A handle on the secret values a proxy injects.
+///
+/// Every connection uses the values current when it was accepted. [`update`]
+/// swaps in new values for later connections without changing placeholders, so
+/// a running child keeps working when a lease credential is renewed.
+///
+/// [`update`]: ProxyValues::update
+#[derive(Clone)]
+pub struct ProxyValues {
+    session: Arc<ProxySession>,
+    current: Arc<RwLock<Arc<ProxyPolicy>>>,
+}
+
+impl ProxyValues {
+    fn snapshot(&self) -> Arc<ProxyPolicy> {
+        self.current
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// Replace the values of the named secrets, keeping their placeholders.
+    ///
+    /// Values that are replaced are still redacted from responses for the rest
+    /// of the session, since the upstream may keep reflecting them until they
+    /// expire.
+    pub fn update(&self, updates: &IndexMap<String, String>) -> Result<()> {
+        let mut current = self
+            .current
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut values = current.values.clone();
+        let mut retired = current.retired.clone();
+        for (secret, value) in updates {
+            let Some(previous) = values.get_mut(secret) else {
+                return Err(proxy_error(format!(
+                    "secret '{secret}' is not used by any proxy rule"
+                )));
+            };
+            if previous != value {
+                let placeholder = self.session.placeholders[secret].clone();
+                retired.push((std::mem::replace(previous, value.clone()), placeholder));
+            }
+        }
+        *current = Arc::new(build_policy(&self.session, values, retired)?);
+        Ok(())
+    }
 }
 
 pub fn validate_config(config: &ProxyConfig) -> Result<()> {
@@ -156,19 +216,14 @@ impl ProxyPlan {
 
         let mut placeholders = HashMap::<String, String>::new();
         let mut env_values = IndexMap::new();
-        let mut prepared = Vec::new();
         let mut seen_placeholders = HashSet::new();
+        let mut rule_values = IndexMap::new();
 
         for rule in &config.rules {
             let value = values
                 .get(&rule.secret)
                 .ok_or_else(|| proxy_error(format!("secret '{}' did not resolve", rule.secret)))?;
-            if value.is_empty() {
-                return Err(proxy_error(format!(
-                    "secret '{}' resolved to an empty value",
-                    rule.secret
-                )));
-            }
+            rule_values.insert(rule.secret.clone(), value.clone());
             let placeholder = match placeholders.get(&rule.secret) {
                 Some(existing) => {
                     if let Some(configured) = &rule.placeholder
@@ -214,21 +269,7 @@ impl ProxyPlan {
                     "environment variable '{env_name}' maps to multiple secrets"
                 )));
             }
-            env_values.insert(env_name.to_string(), placeholder.clone());
-
-            prepared.push(PreparedRule {
-                secret: rule.secret.clone(),
-                domain: rule.domain.to_ascii_lowercase(),
-                header: rule.header.to_ascii_lowercase(),
-                methods: rule
-                    .methods
-                    .iter()
-                    .map(|method| method.to_ascii_uppercase())
-                    .collect(),
-                paths: compile_paths(&rule.paths)?,
-                placeholder,
-                value: value.clone(),
-            });
+            env_values.insert(env_name.to_string(), placeholder);
         }
 
         let placeholder_values: Vec<_> = placeholders.values().collect();
@@ -250,35 +291,108 @@ impl ProxyPlan {
             }
         }
 
-        let mut seen_values = HashSet::new();
-        let mut redactions: Vec<_> = prepared
-            .iter()
-            .filter(|rule| seen_values.insert(rule.value.clone()))
-            .map(|rule| Redaction {
-                value: rule.value.as_bytes().to_vec(),
-                placeholder: rule.placeholder.as_bytes().to_vec(),
-            })
-            .collect();
-        redactions.sort_by_key(|redaction| std::cmp::Reverse(redaction.value.len()));
+        let session = Arc::new(ProxySession {
+            config: config.clone(),
+            placeholders,
+            client: reqwest::Client::builder()
+                .http1_only()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .map_err(|error| {
+                    proxy_error(format!("failed to build upstream client: {error}"))
+                })?,
+        });
+        let policy = build_policy(&session, rule_values, Vec::new())?;
 
         Ok(Self {
-            policy: Arc::new(ProxyPolicy {
-                egress: config.egress,
-                audit: config.audit,
-                rules: prepared,
-                redactions,
-                client: reqwest::Client::builder()
-                    .http1_only()
-                    .no_proxy()
-                    .redirect(reqwest::redirect::Policy::none())
-                    .build()
-                    .map_err(|error| {
-                        proxy_error(format!("failed to build upstream client: {error}"))
-                    })?,
-            }),
+            values: ProxyValues {
+                session,
+                current: Arc::new(RwLock::new(Arc::new(policy))),
+            },
             child_env: env_values,
         })
     }
+
+    /// A handle for replacing secret values once the proxy is running.
+    pub fn values(&self) -> ProxyValues {
+        self.values.clone()
+    }
+}
+
+/// Prepare the rules of `session` with `values`, keyed by secret name.
+/// `retired` lists earlier values, each with its placeholder, that are still
+/// redacted from responses.
+fn build_policy(
+    session: &ProxySession,
+    values: IndexMap<String, String>,
+    retired: Vec<(String, String)>,
+) -> Result<ProxyPolicy> {
+    for (secret, value) in &values {
+        if value.is_empty() {
+            return Err(proxy_error(format!(
+                "secret '{secret}' resolved to an empty value"
+            )));
+        }
+        if session.placeholders[secret] == *value {
+            return Err(proxy_error(format!(
+                "placeholder for '{secret}' must differ from the real value"
+            )));
+        }
+        if session
+            .placeholders
+            .values()
+            .any(|placeholder| value.contains(placeholder.as_str()))
+        {
+            return Err(proxy_error(
+                "a real secret value cannot contain a configured placeholder",
+            ));
+        }
+    }
+
+    let mut prepared = Vec::new();
+    for rule in &session.config.rules {
+        prepared.push(PreparedRule {
+            secret: rule.secret.clone(),
+            domain: rule.domain.to_ascii_lowercase(),
+            header: rule.header.to_ascii_lowercase(),
+            methods: rule
+                .methods
+                .iter()
+                .map(|method| method.to_ascii_uppercase())
+                .collect(),
+            paths: compile_paths(&rule.paths)?,
+            placeholder: session.placeholders[&rule.secret].clone(),
+            value: values[&rule.secret].clone(),
+        });
+    }
+
+    let mut seen_values = HashSet::new();
+    let mut redactions: Vec<_> = prepared
+        .iter()
+        .map(|rule| (rule.value.as_str(), rule.placeholder.as_str()))
+        .chain(
+            retired
+                .iter()
+                .map(|(value, placeholder)| (value.as_str(), placeholder.as_str())),
+        )
+        .filter(|(value, _)| seen_values.insert(value.to_string()))
+        .map(|(value, placeholder)| Redaction {
+            value: value.as_bytes().to_vec(),
+            placeholder: placeholder.as_bytes().to_vec(),
+        })
+        .collect();
+    redactions.sort_by_key(|redaction| std::cmp::Reverse(redaction.value.len()));
+
+    Ok(ProxyPolicy {
+        egress: session.config.egress,
+        audit: session.config.audit,
+        rules: prepared,
+        redactions,
+        client: session.client.clone(),
+        values,
+        retired,
+    })
 }
 
 fn validate_rule(rule: &crate::config::ProxyRule) -> Result<()> {
@@ -425,7 +539,7 @@ impl RunningProxy {
         let address = listener
             .local_addr()
             .map_err(|error| proxy_error(format!("failed to read listener address: {error}")))?;
-        let policy = plan.policy;
+        let values = plan.values;
         let (shutdown_tx, mut shutdown_rx) = oneshot::channel();
         let task = tokio::spawn(async move {
             loop {
@@ -444,7 +558,7 @@ impl RunningProxy {
                             tracing::warn!("rejected non-loopback proxy client: {peer}");
                             continue;
                         }
-                        let policy = policy.clone();
+                        let policy = values.snapshot();
                         let authority = authority.clone();
                         tokio::spawn(async move {
                             if let Err(error) = handle_connection(stream, policy, authority).await {
@@ -967,7 +1081,7 @@ mod tests {
     #[tokio::test]
     async fn malformed_tls_request_receives_http_error() {
         let (mut client, mut server) = tokio::io::duplex(1024);
-        let policy = policy().policy;
+        let policy = policy().values.snapshot();
         let task = tokio::spawn(async move {
             proxy_http_request(&mut server, "api.github.com", &policy).await
         });
@@ -989,13 +1103,12 @@ mod tests {
 
     #[test]
     fn substitutes_only_on_allowed_route_and_header() {
-        let plan = policy();
+        let policy = policy().values.snapshot();
         let mut headers = vec![(
             "Authorization".to_string(),
             "Bearer ghp_placeholder".to_string(),
         )];
-        let injected = plan
-            .policy
+        let injected = policy
             .authorize("api.github.com", "GET", "/repos/example/fnox", &mut headers)
             .unwrap();
         assert_eq!(injected, ["GITHUB_TOKEN"]);
@@ -1004,13 +1117,13 @@ mod tests {
 
     #[test]
     fn rejects_placeholder_on_wrong_method() {
-        let plan = policy();
+        let policy = policy().values.snapshot();
         let mut headers = vec![(
             "Authorization".to_string(),
             "Bearer ghp_placeholder".to_string(),
         )];
         assert!(
-            plan.policy
+            policy
                 .authorize(
                     "api.github.com",
                     "DELETE",
@@ -1023,10 +1136,10 @@ mod tests {
 
     #[test]
     fn rejects_placeholder_in_another_header() {
-        let plan = policy();
+        let policy = policy().values.snapshot();
         let mut headers = vec![("X-Leak".to_string(), "ghp_placeholder".to_string())];
         assert!(
-            plan.policy
+            policy
                 .authorize("api.github.com", "GET", "/repos/example/fnox", &mut headers,)
                 .is_err()
         );
@@ -1035,7 +1148,7 @@ mod tests {
     #[test]
     fn redacts_reflected_values() {
         let mut body = b"token=real-token".to_vec();
-        redact_values(&mut body, &policy().policy.redactions);
+        redact_values(&mut body, &policy().values.snapshot().redactions);
         assert_eq!(body, b"token=ghp_placeholder");
     }
 
@@ -1061,7 +1174,7 @@ mod tests {
         let plan = ProxyPlan::new(&config, &values).unwrap();
         let mut body = b"real-token token".to_vec();
 
-        redact_values(&mut body, &plan.policy.redactions);
+        redact_values(&mut body, &plan.values.snapshot().redactions);
 
         assert_eq!(
             body, b"placeholder-with-token short-placeholder",
@@ -1108,7 +1221,8 @@ mod tests {
             "Bearer ghp_placeholder".to_string(),
         )];
 
-        plan.policy
+        plan.values
+            .snapshot()
             .authorize(
                 "api.github.com",
                 "GET",
@@ -1158,6 +1272,110 @@ mod tests {
         let request = read_http_request(&mut server).await.unwrap();
 
         assert!(request.body.is_empty());
+    }
+
+    #[test]
+    fn updated_values_keep_their_placeholder() {
+        let plan = policy();
+        let values = plan.values();
+        values
+            .update(
+                &[("GITHUB_TOKEN".to_string(), "renewed-token".to_string())]
+                    .into_iter()
+                    .collect(),
+            )
+            .unwrap();
+        let mut headers = vec![(
+            "Authorization".to_string(),
+            "Bearer ghp_placeholder".to_string(),
+        )];
+
+        values
+            .snapshot()
+            .authorize("api.github.com", "GET", "/repos/example/fnox", &mut headers)
+            .unwrap();
+
+        assert_eq!(headers[0].1, "Bearer renewed-token");
+        assert_eq!(plan.child_env["GITHUB_TOKEN"], "ghp_placeholder");
+    }
+
+    #[test]
+    fn updated_values_still_redact_the_previous_value() {
+        let values = policy().values();
+        values
+            .update(
+                &[("GITHUB_TOKEN".to_string(), "renewed-token".to_string())]
+                    .into_iter()
+                    .collect(),
+            )
+            .unwrap();
+        let mut body = b"old=real-token new=renewed-token".to_vec();
+
+        redact_values(&mut body, &values.snapshot().redactions);
+
+        assert_eq!(body, b"old=ghp_placeholder new=ghp_placeholder");
+    }
+
+    #[test]
+    fn connections_keep_the_values_they_started_with() {
+        let values = policy().values();
+        let before = values.snapshot();
+        values
+            .update(
+                &[("GITHUB_TOKEN".to_string(), "renewed-token".to_string())]
+                    .into_iter()
+                    .collect(),
+            )
+            .unwrap();
+        let mut headers = vec![(
+            "Authorization".to_string(),
+            "Bearer ghp_placeholder".to_string(),
+        )];
+
+        before
+            .authorize("api.github.com", "GET", "/repos/example/fnox", &mut headers)
+            .unwrap();
+
+        assert_eq!(headers[0].1, "Bearer real-token");
+    }
+
+    #[test]
+    fn update_rejects_unusable_values() {
+        let values = policy().values();
+        for value in ["", "ghp_placeholder", "prefix-ghp_placeholder"] {
+            assert!(
+                values
+                    .update(
+                        &[("GITHUB_TOKEN".to_string(), value.to_string())]
+                            .into_iter()
+                            .collect(),
+                    )
+                    .is_err(),
+                "{value:?} must be rejected"
+            );
+        }
+        assert!(
+            values
+                .update(
+                    &[("OTHER_TOKEN".to_string(), "value".to_string())]
+                        .into_iter()
+                        .collect(),
+                )
+                .is_err(),
+            "secrets without a rule cannot be updated"
+        );
+        let mut headers = vec![(
+            "Authorization".to_string(),
+            "Bearer ghp_placeholder".to_string(),
+        )];
+        values
+            .snapshot()
+            .authorize("api.github.com", "GET", "/repos/example/fnox", &mut headers)
+            .unwrap();
+        assert_eq!(
+            headers[0].1, "Bearer real-token",
+            "a rejected update leaves the current value in place"
+        );
     }
 
     #[test]

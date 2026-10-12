@@ -419,62 +419,23 @@ pub async fn plan(
         crate::daemon::resolve_batch(cli, config, profile, &set, scope_purpose(scope), true).await?
     };
 
+    let (ran, _temp_files) = run_leases(
+        cli,
+        config,
+        profile,
+        &leases,
+        &sel.leases,
+        &resolved,
+        &secrets,
+        lease_label,
+    )
+    .await?;
     let mut lease_creds: IndexMap<String, String> = IndexMap::new();
     let mut leases_used: Vec<String> = Vec::new();
-
-    // Temporarily set resolved secrets as process env vars so lease backend
-    // SDKs (AWS, GCP, Azure) can find master credentials during lease creation.
-    // The guard removes them on every exit path, including errors.
-    let mut _temp_env_guard = lease::TempEnvGuard::default();
-    let mut _temp_files = Vec::new();
-    if !sel.leases.is_empty() {
-        _temp_files.extend(lease::set_secrets_as_env(
-            &resolved,
-            &secrets,
-            &mut _temp_env_guard,
-        )?);
-        let project_dir = lease::project_dir_from_config(config, &cli.config);
-        for (name, lease_config) in leases.iter().filter(|(name, _)| sel.leases.contains(name)) {
-            let prereq_missing = lease_config.check_prerequisites();
-            if let Some(ref missing) = prereq_missing {
-                let has_cache = {
-                    let _lock = LeaseLedger::lock(&project_dir)?;
-                    let ledger = LeaseLedger::load(&project_dir)?;
-                    let config_hash = lease_config.config_hash();
-                    ledger
-                        .find_reusable(name, &config_hash)
-                        .is_some_and(|r| r.cached_credentials.is_some())
-                };
-                if !has_cache {
-                    tracing::warn!(
-                        "Skipping lease '{}': {}\nRun 'fnox lease create -i {}' to set up credentials interactively.",
-                        name,
-                        missing,
-                        name
-                    );
-                    continue;
-                }
-            }
-            // Intentionally hard-fail: if prerequisites pass but lease creation
-            // fails, abort rather than run without the expected credentials.
-            let creds = lease::resolve_lease(
-                name,
-                lease_config,
-                config,
-                profile,
-                &project_dir,
-                prereq_missing.as_deref(),
-                lease_label,
-                false,
-            )
-            .await?;
-            leases_used.push(name.clone());
-            for (key, value) in creds {
-                lease_creds.insert(key, value);
-            }
-        }
+    for (name, lease) in ran {
+        leases_used.push(name);
+        lease_creds.extend(lease.credentials);
     }
-    drop(_temp_env_guard);
 
     // The lease-time files stay alive for the caller: a lease credential may
     // be a path to one of them, and `fnox exec` keeps them until the child exits.
@@ -490,6 +451,83 @@ pub async fn plan(
         ),
         _temp_files,
     ))
+}
+
+/// Runs the leases in `names`, in config order, the way `fnox exec` does.
+///
+/// The resolved secrets are set as process environment variables while the
+/// leases run, so lease backend SDKs (AWS, GCP, Azure) can find master
+/// credentials, and are removed again before this returns. A lease whose
+/// prerequisites are missing and that has no cached credential is skipped with
+/// a warning, and any other lease error is returned. The files created for
+/// `as_file` secrets are returned, and must outlive anything that uses the
+/// credentials.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_leases(
+    cli: &Cli,
+    config: &Config,
+    profile: &[String],
+    leases: &IndexMap<String, LeaseBackendConfig>,
+    names: &[String],
+    resolved: &IndexMap<String, Option<String>>,
+    secrets: &IndexMap<String, SecretConfig>,
+    lease_label: &str,
+) -> Result<(
+    Vec<(String, lease::ResolvedLease)>,
+    Vec<tempfile::NamedTempFile>,
+)> {
+    let mut ran = Vec::new();
+    let mut temp_files = Vec::new();
+    if names.is_empty() {
+        return Ok((ran, temp_files));
+    }
+
+    // The guard removes the temporary variables on every exit path, including errors.
+    let mut temp_env_guard = lease::TempEnvGuard::default();
+    temp_files.extend(lease::set_secrets_as_env(
+        resolved,
+        secrets,
+        &mut temp_env_guard,
+    )?);
+    let project_dir = lease::project_dir_from_config(config, &cli.config);
+    for (name, lease_config) in leases.iter().filter(|(name, _)| names.contains(name)) {
+        let prereq_missing = lease_config.check_prerequisites();
+        if let Some(ref missing) = prereq_missing {
+            let has_cache = {
+                let _lock = LeaseLedger::lock(&project_dir)?;
+                let ledger = LeaseLedger::load(&project_dir)?;
+                let config_hash = lease_config.config_hash();
+                ledger
+                    .find_reusable(name, &config_hash)
+                    .is_some_and(|r| r.cached_credentials.is_some())
+            };
+            if !has_cache {
+                tracing::warn!(
+                    "Skipping lease '{}': {}\nRun 'fnox lease create -i {}' to set up credentials interactively.",
+                    name,
+                    missing,
+                    name
+                );
+                continue;
+            }
+        }
+        // Intentionally hard-fail: if prerequisites pass but lease creation
+        // fails, abort rather than run without the expected credentials.
+        let lease = lease::resolve_lease_with_expiry(
+            name,
+            lease_config,
+            config,
+            profile,
+            &project_dir,
+            prereq_missing.as_deref(),
+            lease_label,
+            false,
+        )
+        .await?;
+        ran.push((name.clone(), lease));
+    }
+    drop(temp_env_guard);
+    Ok((ran, temp_files))
 }
 
 /// The document `fnox env --json` prints for `env`.

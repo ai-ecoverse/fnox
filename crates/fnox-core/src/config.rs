@@ -480,7 +480,7 @@ pub enum ProxyEgress {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProxyRule {
-    /// Secret name from the active fnox profile.
+    /// Secret or lease credential name from the active fnox profile.
     pub secret: String,
 
     /// Exact TLS server name to which the secret may be sent.
