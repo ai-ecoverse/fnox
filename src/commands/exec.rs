@@ -102,6 +102,73 @@ impl ExecCommand {
         )
         .await?;
 
+        let sealed_names = crate::seven::sealed_secret_names(&config, &profile)?;
+        let sealed_in_plan: Vec<String> = plan
+            .set
+            .keys()
+            .filter(|key| sealed_names.contains(*key))
+            .cloned()
+            .collect();
+        #[cfg(target_os = "wasi")]
+        {
+            if !plan.files.is_empty() {
+                return Err(FnoxError::Seven(
+                    fnox_core::sealed::REFUSED_IN_SEVEN.to_string(),
+                ));
+            }
+            let literal: Vec<&str> = plan
+                .set
+                .keys()
+                .filter(|key| !sealed_names.contains(*key))
+                .map(String::as_str)
+                .collect();
+            if !literal.is_empty() {
+                eprintln!(
+                    "fnox: warning: {} passed as plain values, not through seven's vault",
+                    literal.join(", ")
+                );
+            }
+        }
+        let mut ticket = None;
+        if !sealed_in_plan.is_empty() {
+            let cwd =
+                std::env::current_dir().map_err(|source| FnoxError::CommandExecutionFailed {
+                    command: self.command.join(" "),
+                    source,
+                })?;
+            let path_var = std::env::var_os("PATH");
+            let prepared = match crate::seven::prepare_exec(
+                &self.command,
+                &sealed_in_plan,
+                &cwd,
+                path_var.as_deref(),
+            ) {
+                Ok(prepared) => prepared,
+                Err(crate::seven::PrepareError::Seven(e)) => return Err(e),
+                Err(crate::seven::PrepareError::Program(source)) => {
+                    #[cfg(target_os = "wasi")]
+                    if source.kind() == std::io::ErrorKind::NotFound {
+                        eprintln!("fnox: {cmd_name}: command not found");
+                        std::process::exit(127);
+                    }
+                    return Err(FnoxError::CommandExecutionFailed {
+                        command: self.command.join(" "),
+                        source,
+                    });
+                }
+            };
+            for name in &prepared.kept {
+                eprintln!(
+                    "fnox: {name} keeps its placeholder: seven's policy does not hand it to this command"
+                );
+            }
+            cmd = Command::new(&prepared.program);
+            if self.command.len() > 1 {
+                cmd.args(&self.command[1..]);
+            }
+            ticket = Some(prepared.ticket);
+        }
+
         // Apply in order: remove, then set, then files. Explicit secrets and
         // lease credentials win over the ambient scrub because `remove` never
         // lists a key that is also set.
@@ -124,6 +191,10 @@ impl ExecCommand {
             _temp_files.push(temp_file);
         }
 
+        if let Some(ticket) = &ticket {
+            cmd.env("SLICC_SEALED_TICKET", ticket);
+        }
+
         #[cfg(unix)]
         if self.replace {
             use std::os::unix::process::CommandExt;
@@ -135,10 +206,20 @@ impl ExecCommand {
             });
         }
 
-        let mut child = cmd.spawn().map_err(|e| FnoxError::CommandExecutionFailed {
-            command: self.command.join(" "),
-            source: e,
-        })?;
+        let mut child = match cmd.spawn() {
+            Ok(child) => child,
+            Err(e) => {
+                #[cfg(target_os = "wasi")]
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    eprintln!("fnox: {cmd_name}: command not found");
+                    std::process::exit(127);
+                }
+                return Err(FnoxError::CommandExecutionFailed {
+                    command: self.command.join(" "),
+                    source: e,
+                });
+            }
+        };
 
         // Forward SIGINT/SIGTERM to the child so Ctrl-C and `kill` reach it.
         #[cfg(unix)]
